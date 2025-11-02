@@ -860,7 +860,10 @@ local function getPlayerAttr(targetPlayer, attrName)
 	local success, result = pcall(function()
 		return targetPlayer:GetAttribute(attrName)
 	end)
-	return success and result or nil
+	if success and result ~= nil then
+		return result
+	end
+	return nil
 end
 
 local function getCharAttr(char, attrName)
@@ -868,7 +871,40 @@ local function getCharAttr(char, attrName)
 	local success, result = pcall(function()
 		return char:GetAttribute(attrName)
 	end)
-	return success and result or nil
+	if success and result ~= nil then
+		return result
+	end
+	return nil
+end
+
+local function getDataValue(targetPlayer, valueName)
+	if not targetPlayer then return nil end
+	local success, result = pcall(function()
+		local data = targetPlayer:FindFirstChild("Data")
+		if not data then return nil end
+		local valueObj = data:FindFirstChild(valueName)
+		if not valueObj then return nil end
+		return valueObj.Value
+	end)
+	if success and result ~= nil then
+		return result
+	end
+	return nil
+end
+
+local function getLeaderstats(targetPlayer, statName)
+	if not targetPlayer then return nil end
+	local success, result = pcall(function()
+		local stats = targetPlayer:FindFirstChild("leaderstats")
+		if not stats then return nil end
+		local statObj = stats:FindFirstChild(statName)
+		if not statObj then return nil end
+		return statObj.Value
+	end)
+	if success and result ~= nil then
+		return result
+	end
+	return nil
 end
 
 local function getHealth(char)
@@ -896,15 +932,96 @@ local function updateTab1(targetPlayer)
 	pcall(function()
 		tab1Labels.Subject.Text = "Subject: " .. targetPlayer.Name
 
-		tab1Labels.Exposure.Text = "Exposure: " .. tostring(getPlayerAttr(targetPlayer, "Exposure") or "N/A")
-		tab1Labels.Strength.Text = "Strength: " .. tostring(getPlayerAttr(targetPlayer, "StrengthAttribute") or "N/A")
-		tab1Labels.Agility.Text = "Agility: " .. tostring(getPlayerAttr(targetPlayer, "AgilityAttribute") or "N/A")
-		tab1Labels.Intelligence.Text = "Intelligence: " .. tostring(getPlayerAttr(targetPlayer, "IntelligenceAttribute") or "N/A")
-		tab1Labels.MutationType.Text = "MutationType: " .. tostring(getPlayerAttr(targetPlayer, "MutationType") or "N/A")
-		tab1Labels.PotentialEvolution.Text = "PotentialEvolution: " .. tostring(getPlayerAttr(targetPlayer, "PotentialEvolution") or "N/A")
-		tab1Labels.HasReachedAdvancedMutation.Text = "AdvancedMutation: " .. tostring(getPlayerAttr(targetPlayer, "HasReachedAdvancedMutation") or "N/A")
+		-- Based on game code: ALL stats are stored as CHARACTER attributes
+		-- Priority: Character attributes > Player attributes > Data folder > leaderstats
+		local exposure = getCharAttr(char, "Exposure") or 
+		                 getPlayerAttr(targetPlayer, "Exposure") or 
+		                 getDataValue(targetPlayer, "Exposure") or
+		                 getLeaderstats(targetPlayer, "Exposure")
+		
+		local strength = getCharAttr(char, "StrengthAttribute") or
+		                 getCharAttr(char, "Strength") or
+		                 getPlayerAttr(targetPlayer, "StrengthAttribute") or 
+		                 getPlayerAttr(targetPlayer, "Strength") or
+		                 getDataValue(targetPlayer, "Strength") or
+		                 getLeaderstats(targetPlayer, "Strength")
+		
+		local agility = getCharAttr(char, "AgilityAttribute") or
+		                getCharAttr(char, "Agility") or
+		                getPlayerAttr(targetPlayer, "AgilityAttribute") or
+		                getPlayerAttr(targetPlayer, "Agility") or
+		                getDataValue(targetPlayer, "Agility") or
+		                getLeaderstats(targetPlayer, "Agility")
+		
+		local intelligence = getCharAttr(char, "IntelligenceAttribute") or
+		                     getCharAttr(char, "Intelligence") or
+		                     getPlayerAttr(targetPlayer, "IntelligenceAttribute") or
+		                     getPlayerAttr(targetPlayer, "Intelligence") or
+		                     getDataValue(targetPlayer, "Intelligence") or
+		                     getLeaderstats(targetPlayer, "Intelligence")
+		
+		local mutationType = getCharAttr(char, "MutationType") or
+		                     getPlayerAttr(targetPlayer, "MutationType") or
+		                     getDataValue(targetPlayer, "MutationType")
+		
+		local potentialEvolution = getCharAttr(char, "PotentialEvolution") or
+		                           getPlayerAttr(targetPlayer, "PotentialEvolution") or
+		                           getDataValue(targetPlayer, "PotentialEvolution")
+		
+		local evolutionType = getCharAttr(char, "EvolutionType") or
+		                      getPlayerAttr(targetPlayer, "EvolutionType")
+		
+		local advancedMutation = getCharAttr(char, "HasReachedAdvancedMutation") or
+		                         getPlayerAttr(targetPlayer, "HasReachedAdvancedMutation") or
+		                         getDataValue(targetPlayer, "HasReachedAdvancedMutation")
+		
+		local weight = getCharAttr(char, "Weight") or
+		               getPlayerAttr(targetPlayer, "Weight") or
+		               getDataValue(targetPlayer, "Weight")
 
-		local weight = getPlayerAttr(targetPlayer, "Weight")
+		-- Format exposure without multiplication
+		local exposureText = "N/A"
+		if type(exposure) == "number" then
+			exposureText = string.format("%.2f", exposure)
+		end
+		tab1Labels.Exposure.Text = "Exposure: " .. exposureText
+		
+		-- Format attributes without multiplication
+		local strengthText = "N/A"
+		if type(strength) == "number" then
+			strengthText = string.format("%.2f", strength)
+		end
+		tab1Labels.Strength.Text = "Strength: " .. strengthText
+		
+		local agilityText = "N/A"
+		if type(agility) == "number" then
+			agilityText = string.format("%.2f", agility)
+		end
+		tab1Labels.Agility.Text = "Agility: " .. agilityText
+		
+		local intelligenceText = "N/A"
+		if type(intelligence) == "number" then
+			intelligenceText = string.format("%.2f", intelligence)
+		end
+		tab1Labels.Intelligence.Text = "Intelligence: " .. intelligenceText
+		
+		-- Display mutation type or "N/A"
+		tab1Labels.MutationType.Text = "MutationType: " .. tostring(mutationType or "N/A")
+		
+		-- Show evolution info (matches game logic)
+		local evolutionInfo = "N/A"
+		if evolutionType then
+			evolutionInfo = "EVOLUTION // " .. evolutionType
+		elseif potentialEvolution then
+			evolutionInfo = "POTENTIAL // " .. potentialEvolution
+		elseif advancedMutation then
+			evolutionInfo = "ADVANCED"
+		elseif exposure then
+			evolutionInfo = "BASIC"
+		end
+		tab1Labels.PotentialEvolution.Text = "Evolution: " .. evolutionInfo
+		tab1Labels.HasReachedAdvancedMutation.Text = "AdvancedMutation: " .. tostring(advancedMutation or "N/A")
+
 		local wtext = "Weight: " .. tostring(weight or "N/A")
 		if type(weight) == "number" then
 			wtext = wtext .. " kg"
@@ -957,8 +1074,16 @@ local function updateTab2(targetPlayer)
 	local char = getCharacter(targetPlayer)
 	
 	pcall(function()
-		local r = getPlayerAttr(targetPlayer, "Resilience") or getCharAttr(char, "Resilience")
-		local mr = getPlayerAttr(targetPlayer, "MaxResilience") or getCharAttr(char, "MaxResilience")
+		-- Priority: Character attributes first (matches game structure)
+		local r = getCharAttr(char, "Resilience") or
+		          getPlayerAttr(targetPlayer, "Resilience") or 
+		          getDataValue(targetPlayer, "Resilience") or
+		          getLeaderstats(targetPlayer, "Resilience")
+		
+		local mr = getCharAttr(char, "MaxResilience") or
+		           getPlayerAttr(targetPlayer, "MaxResilience") or 
+		           getDataValue(targetPlayer, "MaxResilience") or
+		           getLeaderstats(targetPlayer, "MaxResilience")
 
 		tab2Labels.Resilience.Text = "Resilience: " .. tostring(r or "N/A")
 		tab2Labels["Max Resilience"].Text = "Max Resilience: " .. tostring(mr or "N/A")
@@ -988,26 +1113,38 @@ local function updateTab2(targetPlayer)
 			tab2Labels["Speed Difference"].Text = "Speed Difference: N/A"
 		end
 
-		local regionCode = getPlayerAttr(targetPlayer, "RegionCode") or getCharAttr(char, "RegionCode")
-		local isElite = getPlayerAttr(targetPlayer, "IsElite") or getCharAttr(char, "IsElite")
-		local currentZone = getPlayerAttr(targetPlayer, "CurrentZone") or getCharAttr(char, "CurrentZone")
+		local regionCode = getCharAttr(char, "RegionCode") or
+		                   getPlayerAttr(targetPlayer, "RegionCode") or 
+		                   getDataValue(targetPlayer, "RegionCode")
+		
+		local isElite = getCharAttr(char, "IsElite") or
+		                getPlayerAttr(targetPlayer, "IsElite") or 
+		                getDataValue(targetPlayer, "IsElite")
+		
+		local currentZone = getCharAttr(char, "CurrentZone") or
+		                    getPlayerAttr(targetPlayer, "CurrentZone") or 
+		                    getDataValue(targetPlayer, "CurrentZone")
 		
 		tab2Labels["Region Code"].Text = "Region Code: " .. tostring(regionCode or "N/A")
 		tab2Labels["Is Elite"].Text = "Is Elite: " .. tostring(isElite or "N/A")
 		tab2Labels["Current Zone"].Text = "Current Zone: " .. tostring(currentZone or "N/A")
 
-		local dataFolder = targetPlayer:FindFirstChild("Data")
-		local credits = "N/A"
-		if dataFolder then
-			local creditsValue = dataFolder:FindFirstChild("Credits")
-			if creditsValue and type(creditsValue.Value) == "number" then
-				local amount = math.floor(creditsValue.Value)
-				credits = tostring(amount):reverse():gsub("(%d%d%d)", "%1,"):reverse():gsub("^,", "")
-			end
+		-- Try multiple locations for Credits
+		local credits = getDataValue(targetPlayer, "Credits") or
+		                getLeaderstats(targetPlayer, "Credits") or
+		                getCharAttr(char, "Credits") or
+		                getPlayerAttr(targetPlayer, "Credits")
+		
+		local creditsText = "N/A"
+		if type(credits) == "number" then
+			local amount = math.floor(credits)
+			creditsText = tostring(amount):reverse():gsub("(%d%d%d)", "%1,"):reverse():gsub("^,", "")
 		end
-		tab2Labels.Credits.Text = "Credits: " .. credits
+		tab2Labels.Credits.Text = "Credits: " .. creditsText
 
+		-- Active perks from Data folder
 		local perks = {}
+		local dataFolder = targetPlayer:FindFirstChild("Data")
 		if dataFolder then
 			for _, child in ipairs(dataFolder:GetChildren()) do
 				if (child:IsA("BoolValue") and child.Value) or
