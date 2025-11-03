@@ -1,1 +1,2046 @@
+-- Roblox GUI Menu Script (Client-Sided) - Neverlose Style
+-- Place this in StarterGui or StarterPlayerScripts
+
+local Players = game:GetService("Players")
+local player = Players.LocalPlayer
+local playerGui = player:WaitForChild("PlayerGui")
+
+-- Neverlose Color Theme
+local COLORS = {
+	Background = Color3.fromRGB(16, 20, 28), -- Darker blue background
+	Sidebar = Color3.fromRGB(12, 15, 21), -- Dark sidebar
+	TopBar = Color3.fromRGB(10, 12, 16), -- Top bar
+	Accent = Color3.fromRGB(89, 169, 255), -- Blue accent
+	AccentDark = Color3.fromRGB(60, 140, 230),
+	AccentGlow = Color3.fromRGB(89, 169, 255), -- Glow effect
+	Text = Color3.fromRGB(200, 205, 215), -- Light gray text
+	TextBright = Color3.fromRGB(255, 255, 255),
+	TextDim = Color3.fromRGB(100, 105, 115), -- Dimmer for categories
+	ButtonHover = Color3.fromRGB(18, 22, 30),
+	Separator = Color3.fromRGB(25, 30, 40)
+}
+
+-- Create ScreenGui
+local screenGui = Instance.new("ScreenGui")
+screenGui.Name = "NeverloseGui"
+screenGui.ResetOnSpawn = false
+screenGui.ZIndexBehavior = Enum.ZIndexBehavior.Sibling
+screenGui.Parent = playerGui
+
+-- Layer for floating dropdowns (above content, follows textboxes)
+local dropdownLayer = Instance.new("Frame")
+dropdownLayer.Name = "DropdownLayer"
+dropdownLayer.BackgroundTransparency = 1
+dropdownLayer.Size = UDim2.fromScale(1,1)
+dropdownLayer.ZIndex = 1000
+dropdownLayer.Visible = false
+dropdownLayer.Parent = screenGui
+
+-- Main Frame (Menu Container)
+local mainFrame = Instance.new("Frame")
+mainFrame.Name = "MainFrame"
+mainFrame.Size = UDim2.new(0, 850, 0, 550)
+mainFrame.Position = UDim2.new(0.5, -425, 0.5, -275)
+mainFrame.BackgroundColor3 = COLORS.Background
+mainFrame.BorderSizePixel = 0
+mainFrame.Active = true
+mainFrame.Draggable = true
+mainFrame.ClipsDescendants = true
+mainFrame.Parent = screenGui
+
+-- Add UICorner for rounded edges
+local mainCorner = Instance.new("UICorner")
+mainCorner.CornerRadius = UDim.new(0, 8)
+mainCorner.Parent = mainFrame
+
+-- Wrapper that will be scaled; keeps mainFrame size stable
+local mainContent = Instance.new("Frame")
+mainContent.Name = "MainContent"
+mainContent.Size = UDim2.new(1, 0, 1, 0)
+mainContent.Position = UDim2.new(0, 0, 0, 0)
+mainContent.BackgroundTransparency = 1
+mainContent.BorderSizePixel = 0
+mainContent.Parent = mainFrame
+
+-- Resizing support
+local DEFAULT_SIZE = Vector2.new(850, 550)
+local MIN_SIZE = Vector2.new(500, 350)
+
+local uiScale = Instance.new("UIScale")
+uiScale.Scale = 1
+uiScale.Parent = mainContent
+
+-- resizing state (declared early so updateScale can reference it)
+local isResizing = false
+-- tracks full-menu collapse to keep scale at 1 during collapse
+local menuCollapsedFlag = false
+
+local function updateScale()
+	-- Lock text/UI scale to 1 to eliminate any visible shrink
+	uiScale.Scale = 1
+end
+
+mainFrame:GetPropertyChangedSignal("AbsoluteSize"):Connect(updateScale)
+
+-- Resize handle (bottom-right)
+local resizeHandle = Instance.new("Frame")
+resizeHandle.Name = "ResizeHandle"
+resizeHandle.Size = UDim2.new(0, 14, 0, 14)
+resizeHandle.AnchorPoint = Vector2.new(1, 1)
+resizeHandle.Position = UDim2.new(1, -4, 1, -4)
+resizeHandle.BackgroundTransparency = 1
+resizeHandle.ZIndex = 50
+resizeHandle.Parent = mainFrame
+
+local rhDeco = Instance.new("ImageLabel")
+rhDeco.Size = UDim2.new(1, 0, 1, 0)
+rhDeco.BackgroundTransparency = 1
+rhDeco.Image = "rbxassetid://6031097225" -- diagonal grip icon
+rhDeco.ImageColor3 = COLORS.TextDim
+rhDeco.Parent = resizeHandle
+
+local UIS = game:GetService("UserInputService")
+local GuiService = game:GetService("GuiService")
+local startMouse
+local startSizeOffset
+local startScale
+local lastClickTime = 0
+local prevDraggable = mainFrame.Draggable
+
+local function snap(val, target, thresh)
+	if math.abs(val - target) <= (thresh or 2) then return target end
+	return val
+end
+
+resizeHandle.InputBegan:Connect(function(input)
+	if input.UserInputType == Enum.UserInputType.MouseButton1 then
+		local now = tick()
+		if now - lastClickTime < 0.3 then
+			-- double-click: reset to default size
+			mainFrame.Size = UDim2.new(0, DEFAULT_SIZE.X, 0, DEFAULT_SIZE.Y)
+			isResizing = false
+			lastClickTime = 0
+			updateScale()
+			return
+		end
+		lastClickTime = now
+		isResizing = true
+		prevDraggable = mainFrame.Draggable
+		mainFrame.Draggable = false
+		local inset = GuiService:GetGuiInset()
+		startMouse = UIS:GetMouseLocation() - inset
+		startSizeOffset = Vector2.new(mainFrame.Size.X.Offset, mainFrame.Size.Y.Offset)
+		startScale = uiScale.Scale
+	end
+end)
+
+UIS.InputEnded:Connect(function(input)
+	if input.UserInputType == Enum.UserInputType.MouseButton1 then
+		isResizing = false
+		mainFrame.Draggable = prevDraggable
+		updateScale()
+	end
+end)
+
+UIS.InputChanged:Connect(function(input)
+	if isResizing and input.UserInputType == Enum.UserInputType.MouseMovement then
+		local inset = GuiService:GetGuiInset()
+		local mouse = UIS:GetMouseLocation() - inset
+		local delta = mouse - startMouse
+		local inv = (startScale == 0) and 1 or (1 / startScale)
+		local newX = math.clamp(startSizeOffset.X + math.floor(delta.X * inv + 0.5), MIN_SIZE.X, DEFAULT_SIZE.X)
+		local newY = math.clamp(startSizeOffset.Y + math.floor(delta.Y * inv + 0.5), MIN_SIZE.Y, DEFAULT_SIZE.Y)
+		newX = snap(newX, DEFAULT_SIZE.X, 3)
+		newY = snap(newY, DEFAULT_SIZE.Y, 3)
+		newX = snap(newX, MIN_SIZE.X, 3)
+		newY = snap(newY, MIN_SIZE.Y, 3)
+		if math.abs(mainFrame.Size.X.Offset - newX) >= 1 or math.abs(mainFrame.Size.Y.Offset - newY) >= 1 then
+			mainFrame.Size = UDim2.new(0, newX, 0, newY)
+		end
+	end
+end)
+
+-- Sidebar Frame (with logo at top)
+local sidebar = Instance.new("Frame")
+sidebar.Name = "Sidebar"
+sidebar.Size = UDim2.new(0, 180, 1, 0)
+sidebar.Position = UDim2.new(0, 0, 0, 0)
+sidebar.BackgroundColor3 = COLORS.Sidebar
+sidebar.BorderSizePixel = 0
+sidebar.Parent = mainContent
+
+local sidebarCorner = Instance.new("UICorner")
+sidebarCorner.CornerRadius = UDim.new(0, 8)
+sidebarCorner.Parent = sidebar
+
+-- Logo at top of sidebar with glow effect
+local logoContainer = Instance.new("Frame")
+logoContainer.Name = "LogoContainer"
+logoContainer.Size = UDim2.new(1, 0, 0, 60)
+logoContainer.Position = UDim2.new(0, 0, 0, 0)
+logoContainer.BackgroundTransparency = 1
+logoContainer.Parent = sidebar
+
+local logoLabel = Instance.new("TextLabel")
+logoLabel.Name = "LogoLabel"
+logoLabel.Size = UDim2.new(1, 0, 1, 0)
+logoLabel.BackgroundTransparency = 1
+logoLabel.Text = "NEVERLOSE"
+logoLabel.TextColor3 = COLORS.Accent
+logoLabel.TextSize = 18
+logoLabel.Font = Enum.Font.GothamBold
+logoLabel.TextStrokeTransparency = 0.5
+logoLabel.TextStrokeColor3 = COLORS.AccentGlow
+logoLabel.Parent = logoContainer
+
+-- Separator below logo
+local logoSeparator = Instance.new("Frame")
+logoSeparator.Name = "LogoSeparator"
+logoSeparator.Size = UDim2.new(0.8, 0, 0, 1)
+logoSeparator.Position = UDim2.new(0.1, 0, 1, 0)
+logoSeparator.BackgroundColor3 = COLORS.Separator
+logoSeparator.BorderSizePixel = 0
+logoSeparator.Parent = logoContainer
+
+-- Sidebar Right Border
+local sidebarBorder = Instance.new("Frame")
+sidebarBorder.Name = "SidebarBorder"
+sidebarBorder.Size = UDim2.new(0, 1, 1, 0)
+sidebarBorder.Position = UDim2.new(1, 0, 0, 0)
+sidebarBorder.BackgroundColor3 = COLORS.Separator
+sidebarBorder.BorderSizePixel = 0
+sidebarBorder.Parent = sidebar
+
+-- Content Area (right side)
+local contentContainer = Instance.new("Frame")
+contentContainer.Name = "ContentContainer"
+contentContainer.Size = UDim2.new(1, -180, 1, 0)
+contentContainer.Position = UDim2.new(0, 180, 0, 0)
+contentContainer.BackgroundTransparency = 1
+contentContainer.Parent = mainContent
+
+-- Top Bar (inside content area)
+local topBar = Instance.new("Frame")
+topBar.Name = "TopBar"
+topBar.Size = UDim2.new(1, 0, 0, 50)
+topBar.Position = UDim2.new(0, 0, 0, 0)
+topBar.BackgroundTransparency = 1
+topBar.BorderSizePixel = 0
+topBar.Parent = contentContainer
+
+-- Function to create top bar icon button
+local function createTopBarIcon(iconText, position)
+	local button = Instance.new("TextButton")
+	button.Size = UDim2.new(0, 35, 0, 35)
+	button.Position = position
+	button.BackgroundColor3 = COLORS.Sidebar
+	button.BorderSizePixel = 0
+	button.Text = iconText
+	button.TextColor3 = COLORS.Text
+	button.TextSize = 18
+	button.Font = Enum.Font.GothamBold
+	button.Parent = topBar
+	
+	local corner = Instance.new("UICorner")
+	corner.CornerRadius = UDim.new(0, 6)
+	corner.Parent = button
+	
+	button.MouseEnter:Connect(function()
+		button.BackgroundColor3 = COLORS.ButtonHover
+	end)
+	
+	button.MouseLeave:Connect(function()
+		button.BackgroundColor3 = COLORS.Sidebar
+	end)
+	
+	return button
+end
+
+-- Create top bar icons (right side) with better spacing
+local trashIcon = createTopBarIcon("🗑", UDim2.new(1, -50, 0.5, -17.5))
+local bellIcon = createTopBarIcon("🔔", UDim2.new(1, -95, 0.5, -17.5))
+local settingsIcon = createTopBarIcon("⚙", UDim2.new(1, -140, 0.5, -17.5))
+
+-- HP Alert system on bell icon
+local HPState = { Enabled = false, Mode = "ALERT" }
+local hpAlert = Instance.new("TextLabel")
+hpAlert.Name = "HPAlert"
+hpAlert.Size = UDim2.new(1, -40, 0, 24)
+hpAlert.Position = UDim2.new(0, 20, 0, 52)
+hpAlert.BackgroundColor3 = Color3.fromRGB(90,20,20)
+hpAlert.BackgroundTransparency = 1
+hpAlert.TextColor3 = Color3.fromRGB(255,220,220)
+hpAlert.TextSize = 12
+hpAlert.Font = Enum.Font.GothamBold
+hpAlert.TextXAlignment = Enum.TextXAlignment.Left
+hpAlert.Visible = false
+hpAlert.ZIndex = 80
+hpAlert.Parent = contentContainer
+
+local function setHPBellVisual()
+	local col = (HPState.Mode == "ALERT" and Color3.fromRGB(255,200,40))
+		or (HPState.Mode == "LEAVE" and Color3.fromRGB(210,70,70))
+		or (HPState.Mode == "REJOIN" and COLORS.Accent)
+		or COLORS.Text
+	bellIcon.TextColor3 = HPState.Enabled and col or COLORS.Text
+end
+setHPBellVisual()
+
+bellIcon.MouseButton1Click:Connect(function()
+	HPState.Enabled = not HPState.Enabled
+	setHPBellVisual()
+end)
+
+bellIcon.MouseButton2Click:Connect(function()
+	if HPState.Mode == "ALERT" then HPState.Mode = "LEAVE"
+	elseif HPState.Mode == "LEAVE" then HPState.Mode = "REJOIN"
+	else HPState.Mode = "ALERT" end
+	setHPBellVisual()
+end)
+
+-- Listen to local player's HP for alerts/leave/rejoin
+spawn(function()
+	local Players = game:GetService("Players")
+	local TeleportService = game:GetService("TeleportService")
+	local plr = Players.LocalPlayer
+	local lastH
+	while true do
+		task.wait(0.1)
+		if not HPState.Enabled then continue end
+		local char = plr.Character
+		local hum = char and char:FindFirstChildOfClass("Humanoid")
+		if hum then
+			local h = hum.Health
+			if lastH and h < lastH then
+				if HPState.Mode == "ALERT" then
+					hpAlert.Text = string.format("⚠ HP LOSS — %d (now %d)", math.floor(lastH-h), math.floor(h))
+					hpAlert.Visible = true
+					hpAlert.BackgroundTransparency = 0
+					hpAlert.TextTransparency = 0
+					delay(2.0, function()
+						hpAlert.Visible = false
+						hpAlert.BackgroundTransparency = 1
+						hpAlert.TextTransparency = 0
+					end)
+				elseif HPState.Mode == "LEAVE" then
+					pcall(function() plr:Kick("Disconnected by HP Alert") end)
+				elseif HPState.Mode == "REJOIN" then
+					pcall(function() TeleportService:Teleport(game.PlaceId, plr) end)
+				end
+			end
+			lastH = h
+		end
+	end
+end)
+
+-- Settings Menu (initially hidden)
+local settingsMenu = Instance.new("Frame")
+settingsMenu.Name = "SettingsMenu"
+settingsMenu.Size = UDim2.new(0, 300, 0, 250)
+settingsMenu.Position = UDim2.new(1, -320, 0, 60)
+settingsMenu.BackgroundColor3 = Color3.fromRGB(20, 24, 32)
+settingsMenu.BackgroundTransparency = 0.1
+settingsMenu.BorderSizePixel = 0
+settingsMenu.Visible = false
+settingsMenu.ZIndex = 10
+settingsMenu.Parent = contentContainer
+
+local settingsCorner = Instance.new("UICorner")
+settingsCorner.CornerRadius = UDim.new(0, 8)
+settingsCorner.Parent = settingsMenu
+
+-- Settings menu shadow/border
+local settingsBorder = Instance.new("UIStroke")
+settingsBorder.Color = COLORS.Separator
+settingsBorder.Thickness = 1
+settingsBorder.Parent = settingsMenu
+
+-- Settings menu title
+local settingsTitle = Instance.new("TextLabel")
+settingsTitle.Name = "Title"
+settingsTitle.Size = UDim2.new(1, -30, 0, 40)
+settingsTitle.Position = UDim2.new(0, 15, 0, 10)
+settingsTitle.BackgroundTransparency = 1
+settingsTitle.Text = "Settings"
+settingsTitle.TextColor3 = COLORS.TextBright
+settingsTitle.TextSize = 16
+settingsTitle.Font = Enum.Font.GothamBold
+settingsTitle.TextXAlignment = Enum.TextXAlignment.Left
+settingsTitle.Parent = settingsMenu
+
+-- Settings content area
+local settingsContent = Instance.new("Frame")
+settingsContent.Name = "Content"
+settingsContent.Size = UDim2.new(1, -30, 1, -60)
+settingsContent.Position = UDim2.new(0, 15, 0, 50)
+settingsContent.BackgroundTransparency = 1
+settingsContent.Parent = settingsMenu
+
+local settingsLayout = Instance.new("UIListLayout")
+settingsLayout.SortOrder = Enum.SortOrder.LayoutOrder
+settingsLayout.Padding = UDim.new(0, 12)
+settingsLayout.Parent = settingsContent
+
+-- Create test settings
+local function createSettingToggle(name, parent)
+	local toggle = Instance.new("Frame")
+	toggle.Name = name
+	toggle.Size = UDim2.new(1, 0, 0, 30)
+	toggle.BackgroundTransparency = 1
+	toggle.LayoutOrder = #parent:GetChildren()
+	toggle.Parent = parent
+	
+	local label = Instance.new("TextLabel")
+	label.Size = UDim2.new(1, -60, 1, 0)
+	label.BackgroundTransparency = 1
+	label.Text = name
+	label.TextColor3 = COLORS.Text
+	label.TextSize = 13
+	label.Font = Enum.Font.Gotham
+	label.TextXAlignment = Enum.TextXAlignment.Left
+	label.Parent = toggle
+	
+	local toggleButton = Instance.new("TextButton")
+	toggleButton.Name = "ToggleButton"
+	toggleButton.Size = UDim2.new(0, 40, 0, 20)
+	toggleButton.Position = UDim2.new(1, -40, 0.5, -10)
+	toggleButton.BackgroundColor3 = COLORS.Separator
+	toggleButton.BorderSizePixel = 0
+	toggleButton.Text = ""
+	toggleButton.Parent = toggle
+	
+	local toggleCorner = Instance.new("UICorner")
+	toggleCorner.CornerRadius = UDim.new(0, 10)
+	toggleCorner.Parent = toggleButton
+	
+	local toggleKnob = Instance.new("Frame")
+	toggleKnob.Name = "Knob"
+	toggleKnob.Size = UDim2.new(0, 16, 0, 16)
+	toggleKnob.Position = UDim2.new(0, 2, 0.5, -8)
+	toggleKnob.BackgroundColor3 = COLORS.TextDim
+	toggleKnob.BorderSizePixel = 0
+	toggleKnob.Parent = toggleButton
+	
+	local knobCorner = Instance.new("UICorner")
+	knobCorner.CornerRadius = UDim.new(0, 8)
+	knobCorner.Parent = toggleKnob
+	
+	local toggled = false
+	toggleButton.MouseButton1Click:Connect(function()
+		toggled = not toggled
+		if toggled then
+			toggleButton.BackgroundColor3 = COLORS.Accent
+			toggleKnob.Position = UDim2.new(1, -18, 0.5, -8)
+			toggleKnob.BackgroundColor3 = COLORS.TextBright
+		else
+			toggleButton.BackgroundColor3 = COLORS.Separator
+			toggleKnob.Position = UDim2.new(0, 2, 0.5, -8)
+			toggleKnob.BackgroundColor3 = COLORS.TextDim
+		end
+		print(name .. " toggled: " .. tostring(toggled))
+	end)
+	
+	return toggle
+end
+
+-- Add test settings
+createSettingToggle("Enable Notifications", settingsContent)
+createSettingToggle("Show Indicators", settingsContent)
+createSettingToggle("Auto Save Config", settingsContent)
+createSettingToggle("Debug Mode", settingsContent)
+
+-- Settings icon click handler
+local settingsOpen = false
+settingsIcon.MouseButton1Click:Connect(function()
+	settingsOpen = not settingsOpen
+	
+	if settingsOpen then
+		settingsMenu.Visible = true
+		settingsMenu.BackgroundTransparency = 1
+		settingsMenu.Size = UDim2.new(0, 280, 0, 230)
+		
+		-- Smooth animation
+		game:GetService("TweenService"):Create(
+			settingsMenu,
+			TweenInfo.new(0.3, Enum.EasingStyle.Quint, Enum.EasingDirection.Out),
+			{BackgroundTransparency = 0.1, Size = UDim2.new(0, 300, 0, 250)}
+		):Play()
+	else
+		game:GetService("TweenService"):Create(
+			settingsMenu,
+			TweenInfo.new(0.2, Enum.EasingStyle.Quint, Enum.EasingDirection.In),
+			{BackgroundTransparency = 1, Size = UDim2.new(0, 280, 0, 230)}
+		):Play()
+		
+		wait(0.2)
+		settingsMenu.Visible = false
+	end
+end)
+
+-- Uninject button (hidden by default, toggled by trash icon)
+local uninjectButton = Instance.new("TextButton")
+uninjectButton.Name = "UninjectButton"
+uninjectButton.Size = UDim2.new(0, 110, 0, 34)
+-- align under rightmost icon (trash)
+uninjectButton.Position = UDim2.new(1, -125, 0, 60)
+uninjectButton.BackgroundColor3 = Color3.fromRGB(220, 70, 80)
+uninjectButton.BorderSizePixel = 0
+uninjectButton.Text = "Uninject"
+uninjectButton.TextColor3 = COLORS.TextBright
+uninjectButton.TextSize = 14
+uninjectButton.Font = Enum.Font.GothamBold
+uninjectButton.Visible = false
+uninjectButton.ZIndex = 10
+uninjectButton.Parent = contentContainer
+
+local uninjectCorner = Instance.new("UICorner")
+uninjectCorner.CornerRadius = UDim.new(0, 6)
+uninjectCorner.Parent = uninjectButton
+
+local uninjectStroke = Instance.new("UIStroke")
+uninjectStroke.Color = COLORS.Separator
+uninjectStroke.Thickness = 1
+uninjectStroke.Parent = uninjectButton
+
+uninjectButton.MouseEnter:Connect(function()
+	uninjectButton.BackgroundColor3 = Color3.fromRGB(200, 60, 70)
+end)
+
+uninjectButton.MouseLeave:Connect(function()
+	uninjectButton.BackgroundColor3 = Color3.fromRGB(220, 70, 80)
+end)
+
+-- Toggle reveal/hide for Uninject via trash icon
+local uninjectOpen = false
+trashIcon.MouseButton1Click:Connect(function()
+	uninjectOpen = not uninjectOpen
+	if uninjectOpen then
+		uninjectButton.Visible = true
+		uninjectButton.BackgroundTransparency = 1
+		uninjectButton.TextTransparency = 1
+		uninjectButton.Size = UDim2.new(0, 90, 0, 0)
+		game:GetService("TweenService"):Create(
+			uninjectButton,
+			TweenInfo.new(0.25, Enum.EasingStyle.Quint, Enum.EasingDirection.Out),
+			{BackgroundTransparency = 0, TextTransparency = 0, Size = UDim2.new(0, 110, 0, 34)}
+		):Play()
+	else
+		local tween = game:GetService("TweenService"):Create(
+			uninjectButton,
+			TweenInfo.new(0.2, Enum.EasingStyle.Quint, Enum.EasingDirection.In),
+			{BackgroundTransparency = 1, TextTransparency = 1, Size = UDim2.new(0, 90, 0, 0)}
+		)
+		tween:Play()
+		tween.Completed:Wait()
+		uninjectButton.Visible = false
+	end
+end)
+
+-- Confirmation dialog for uninject (centered modal overlay)
+local modalOverlay = Instance.new("Frame")
+modalOverlay.Name = "ModalOverlay"
+modalOverlay.Size = UDim2.new(1, 0, 1, 0)
+modalOverlay.Position = UDim2.new(0, 0, 0, 0)
+modalOverlay.BackgroundColor3 = Color3.fromRGB(0, 0, 0)
+modalOverlay.BackgroundTransparency = 1
+modalOverlay.Visible = false
+modalOverlay.ZIndex = 100
+modalOverlay.Parent = screenGui
+
+local confirmDialog = Instance.new("Frame")
+confirmDialog.Name = "UninjectConfirm"
+confirmDialog.Size = UDim2.new(0, 260, 0, 110)
+confirmDialog.AnchorPoint = Vector2.new(0.5, 0.5)
+confirmDialog.Position = UDim2.new(0.5, 0, 0.5, 0)
+confirmDialog.BackgroundColor3 = Color3.fromRGB(20, 24, 32)
+confirmDialog.BackgroundTransparency = 0.1
+confirmDialog.BorderSizePixel = 0
+confirmDialog.Visible = false
+confirmDialog.ZIndex = 101
+confirmDialog.Parent = modalOverlay
+
+local confirmCorner = Instance.new("UICorner")
+confirmCorner.CornerRadius = UDim.new(0, 8)
+confirmCorner.Parent = confirmDialog
+
+local confirmStroke = Instance.new("UIStroke")
+confirmStroke.Color = COLORS.Separator
+confirmStroke.Thickness = 1
+confirmStroke.Parent = confirmDialog
+
+local confirmTitle = Instance.new("TextLabel")
+confirmTitle.Size = UDim2.new(1, -20, 0, 28)
+confirmTitle.Position = UDim2.new(0, 10, 0, 10)
+confirmTitle.BackgroundTransparency = 1
+confirmTitle.Text = "Confirm Uninject"
+confirmTitle.TextColor3 = COLORS.TextBright
+confirmTitle.TextSize = 16
+confirmTitle.Font = Enum.Font.GothamBold
+confirmTitle.TextXAlignment = Enum.TextXAlignment.Left
+confirmTitle.Parent = confirmDialog
+
+local confirmDesc = Instance.new("TextLabel")
+confirmDesc.Size = UDim2.new(1, -20, 0, 20)
+confirmDesc.Position = UDim2.new(0, 10, 0, 40)
+confirmDesc.BackgroundTransparency = 1
+confirmDesc.Text = "This will close the UI."
+confirmDesc.TextColor3 = COLORS.Text
+confirmDesc.TextSize = 12
+confirmDesc.Font = Enum.Font.Gotham
+confirmDesc.TextXAlignment = Enum.TextXAlignment.Left
+confirmDesc.Parent = confirmDialog
+
+local cancelButton = Instance.new("TextButton")
+cancelButton.Name = "Cancel"
+cancelButton.Size = UDim2.new(0, 110, 0, 30)
+cancelButton.Position = UDim2.new(0, 10, 1, -40)
+cancelButton.BackgroundColor3 = COLORS.Separator
+cancelButton.BorderSizePixel = 0
+cancelButton.Text = "Cancel"
+cancelButton.TextColor3 = COLORS.TextBright
+cancelButton.TextSize = 14
+cancelButton.Font = Enum.Font.GothamBold
+cancelButton.Parent = confirmDialog
+
+local cancelCorner = Instance.new("UICorner")
+cancelCorner.CornerRadius = UDim.new(0, 6)
+cancelCorner.Parent = cancelButton
+
+local yesButton = Instance.new("TextButton")
+yesButton.Name = "YesUninject"
+yesButton.Size = UDim2.new(0, 120, 0, 30)
+yesButton.Position = UDim2.new(1, -130, 1, -40)
+yesButton.BackgroundColor3 = Color3.fromRGB(220, 70, 80)
+yesButton.BorderSizePixel = 0
+yesButton.Text = "Uninject"
+yesButton.TextColor3 = COLORS.TextBright
+yesButton.TextSize = 14
+yesButton.Font = Enum.Font.GothamBold
+yesButton.Parent = confirmDialog
+
+local yesCorner = Instance.new("UICorner")
+yesCorner.CornerRadius = UDim.new(0, 6)
+yesCorner.Parent = yesButton
+
+-- Show confirmation when pressing Uninject (centered, with dim overlay)
+uninjectButton.MouseButton1Click:Connect(function()
+	modalOverlay.Visible = true
+	modalOverlay.BackgroundTransparency = 1
+	confirmDialog.Visible = true
+	confirmDialog.BackgroundTransparency = 1
+	confirmDialog.Size = UDim2.new(0, 230, 0, 0)
+	local TweenService = game:GetService("TweenService")
+	TweenService:Create(
+		modalOverlay,
+		TweenInfo.new(0.2, Enum.EasingStyle.Linear, Enum.EasingDirection.Out),
+		{BackgroundTransparency = 0.4}
+	):Play()
+	TweenService:Create(
+		confirmDialog,
+		TweenInfo.new(0.25, Enum.EasingStyle.Quint, Enum.EasingDirection.Out),
+		{BackgroundTransparency = 0.1, Size = UDim2.new(0, 260, 0, 110)}
+	):Play()
+end)
+
+-- Confirm / cancel handlers
+local function hideConfirm()
+	local TweenService = game:GetService("TweenService")
+	local t1 = TweenService:Create(
+		confirmDialog,
+		TweenInfo.new(0.2, Enum.EasingStyle.Quint, Enum.EasingDirection.In),
+		{BackgroundTransparency = 1, Size = UDim2.new(0, 230, 0, 0)}
+	)
+	local t2 = TweenService:Create(
+		modalOverlay,
+		TweenInfo.new(0.2, Enum.EasingStyle.Linear, Enum.EasingDirection.In),
+		{BackgroundTransparency = 1}
+	)
+	t1:Play()
+	t2:Play()
+	t1.Completed:Wait()
+	confirmDialog.Visible = false
+	modalOverlay.Visible = false
+end
+
+cancelButton.MouseButton1Click:Connect(hideConfirm)
+yesButton.MouseButton1Click:Connect(function()
+	screenGui:Destroy()
+end)
+
+-- Top Bar Separator
+local topBarSeparator = Instance.new("Frame")
+topBarSeparator.Name = "Separator"
+topBarSeparator.Size = UDim2.new(1, 0, 0, 1)
+topBarSeparator.Position = UDim2.new(0, 0, 1, -1)
+topBarSeparator.BackgroundColor3 = COLORS.Separator
+topBarSeparator.BorderSizePixel = 0
+topBarSeparator.Parent = topBar
+
+-- Collapse entire menu button (top-center)
+local collapseMenuButton = Instance.new("TextButton")
+collapseMenuButton.Name = "CollapseMenu"
+collapseMenuButton.Size = UDim2.new(0, 28, 0, 20)
+collapseMenuButton.Position = UDim2.new(0.5, -14, 0, -10)
+collapseMenuButton.BackgroundTransparency = 1
+collapseMenuButton.Text = "▲"
+collapseMenuButton.TextColor3 = COLORS.TextDim
+collapseMenuButton.TextSize = 16
+collapseMenuButton.Font = Enum.Font.GothamBold
+collapseMenuButton.ZIndex = 60
+collapseMenuButton.Parent = mainFrame
+
+local isMenuCollapsed = false
+local prevMenuSize = mainFrame.Size
+local savedVisibility = {}
+local savedSettingsOpen = false
+
+collapseMenuButton.MouseButton1Click:Connect(function()
+	local TweenService = game:GetService("TweenService")
+if not isMenuCollapsed then
+		isMenuCollapsed = true
+		menuCollapsedFlag = true
+		prevMenuSize = mainFrame.Size
+		collapseMenuButton.Text = "▼"
+		-- hide everything except the top bar
+		sidebar.Visible = false
+		savedVisibility = {}
+		savedSettingsOpen = settingsOpen
+		for _, child in ipairs(contentContainer:GetChildren()) do
+			savedVisibility[child] = child.Visible
+			if child ~= topBar then child.Visible = false end
+		end
+		-- force settings closed while collapsed
+		settingsOpen = false
+		settingsMenu.Visible = false
+		-- keep scale fixed while collapsed
+		uiScale.Scale = 1
+		-- resize to top bar height
+		TweenService:Create(
+			mainFrame,
+			TweenInfo.new(0.25, Enum.EasingStyle.Quint, Enum.EasingDirection.Out),
+			{Size = UDim2.new(0, prevMenuSize.X.Offset, 0, 60)}
+		):Play()
+		resizeHandle.Visible = false
+	else
+		isMenuCollapsed = false
+		menuCollapsedFlag = false
+		collapseMenuButton.Text = "▲"
+		TweenService:Create(
+			mainFrame,
+			TweenInfo.new(0.25, Enum.EasingStyle.Quint, Enum.EasingDirection.Out),
+			{Size = prevMenuSize}
+		):Play()
+		sidebar.Visible = true
+		for _, child in ipairs(contentContainer:GetChildren()) do
+			local vis = savedVisibility[child]
+			if vis ~= nil then
+				child.Visible = vis
+			end
+		end
+		-- restore settings menu state exactly as before collapse
+		settingsOpen = savedSettingsOpen and true or false
+		settingsMenu.Visible = settingsOpen
+		savedVisibility = {}
+		resizeHandle.Visible = true
+		-- recompute scale based on width
+		updateScale()
+	end
+end)
+
+-- Sidebar ScrollingFrame for tabs
+local sidebarScroll = Instance.new("ScrollingFrame")
+sidebarScroll.Name = "SidebarScroll"
+sidebarScroll.Size = UDim2.new(1, 0, 1, -135) -- Leave space for logo and footer
+sidebarScroll.Position = UDim2.new(0, 0, 0, 70)
+sidebarScroll.BackgroundTransparency = 1
+sidebarScroll.BorderSizePixel = 0
+sidebarScroll.ScrollBarThickness = 3
+sidebarScroll.ScrollBarImageColor3 = COLORS.Accent
+sidebarScroll.CanvasSize = UDim2.new(0, 0, 0, 0)
+sidebarScroll.AutomaticCanvasSize = Enum.AutomaticSize.Y
+sidebarScroll.Parent = sidebar
+
+-- Sidebar content padding
+local sidebarPadding = Instance.new("UIPadding")
+sidebarPadding.PaddingLeft = UDim.new(0, 10)
+sidebarPadding.PaddingRight = UDim.new(0, 10)
+sidebarPadding.PaddingTop = UDim.new(0, 5)
+sidebarPadding.Parent = sidebarScroll
+
+-- Footer nametag at bottom of sidebar
+local footer = Instance.new("Frame")
+footer.Name = "Footer"
+footer.Size = UDim2.new(1, 0, 0, 65)
+footer.Position = UDim2.new(0, 0, 1, -65)
+footer.BackgroundTransparency = 1
+footer.Parent = sidebar
+
+local footerSeparator = Instance.new("Frame")
+footerSeparator.Size = UDim2.new(0.8, 0, 0, 1)
+footerSeparator.Position = UDim2.new(0.1, 0, 0, 5)
+footerSeparator.BackgroundColor3 = COLORS.Separator
+footerSeparator.BorderSizePixel = 0
+footerSeparator.Parent = footer
+
+-- Get player info
+local userId = player.UserId
+local playerName = player.Name
+local regionCode = "N/A"
+
+-- Get region code from Player attribute
+local success, result = pcall(function()
+	return player:GetAttribute("RegionCode")
+end)
+
+if success and result then
+	regionCode = result
+	print("[GUI] Region code retrieved:", regionCode)
+else
+	print("[GUI] Failed to get region code, using default:", regionCode)
+end
+
+-- Get current time
+local currentTime = os.date("%H:%M")
+
+-- Avatar thumbnail
+local avatarImage = Instance.new("ImageLabel")
+avatarImage.Name = "Avatar"
+avatarImage.Size = UDim2.new(0, 40, 0, 40)
+avatarImage.Position = UDim2.new(0, 10, 0, 18)
+avatarImage.BackgroundColor3 = COLORS.Sidebar
+avatarImage.BorderSizePixel = 0
+avatarImage.Image = "rbxasset://textures/ui/GuiImagePlaceholder.png" -- Placeholder
+avatarImage.Parent = footer
+
+local avatarCorner = Instance.new("UICorner")
+avatarCorner.CornerRadius = UDim.new(0, 20)
+avatarCorner.Parent = avatarImage
+
+-- Load player thumbnail
+local Players = game:GetService("Players")
+local ContentProvider = game:GetService("ContentProvider")
+
+spawn(function()
+	local success, thumbnailUrl = pcall(function()
+		return Players:GetUserThumbnailAsync(
+			userId,
+			Enum.ThumbnailType.HeadShot,
+			Enum.ThumbnailSize.Size150x150
+		)
+	end)
+	
+	if success and thumbnailUrl then
+		avatarImage.Image = thumbnailUrl
+		-- Preload the image
+		pcall(function()
+			ContentProvider:PreloadAsync({avatarImage})
+		end)
+	end
+end)
+
+-- Player info container
+local infoContainer = Instance.new("Frame")
+infoContainer.Name = "InfoContainer"
+infoContainer.Size = UDim2.new(1, -60, 1, -15)
+infoContainer.Position = UDim2.new(0, 55, 0, 15)
+infoContainer.BackgroundTransparency = 1
+infoContainer.Parent = footer
+
+-- Player name
+local nameLabel = Instance.new("TextLabel")
+nameLabel.Name = "NameLabel"
+nameLabel.Size = UDim2.new(1, 0, 0, 18)
+nameLabel.Position = UDim2.new(0, 0, 0, 0)
+nameLabel.BackgroundTransparency = 1
+nameLabel.Text = playerName
+nameLabel.TextColor3 = COLORS.TextBright
+nameLabel.TextSize = 13
+nameLabel.Font = Enum.Font.GothamBold
+nameLabel.TextXAlignment = Enum.TextXAlignment.Left
+nameLabel.TextTruncate = Enum.TextTruncate.AtEnd
+nameLabel.Parent = infoContainer
+
+-- Region and time info
+local infoLabel = Instance.new("TextLabel")
+infoLabel.Name = "InfoLabel"
+infoLabel.Size = UDim2.new(1, 0, 0, 14)
+infoLabel.Position = UDim2.new(0, 0, 0, 20)
+infoLabel.BackgroundTransparency = 1
+infoLabel.Text = regionCode .. " • " .. currentTime
+infoLabel.TextColor3 = COLORS.TextDim
+infoLabel.TextSize = 11
+infoLabel.Font = Enum.Font.Gotham
+infoLabel.TextXAlignment = Enum.TextXAlignment.Left
+infoLabel.Parent = infoContainer
+
+-- Update time every minute
+spawn(function()
+	while wait(60) do
+		local newTime = os.date("%H:%M")
+		infoLabel.Text = regionCode .. " • " .. newTime
+	end
+end)
+
+-- Content Area
+local contentArea = Instance.new("ScrollingFrame")
+contentArea.Name = "ContentArea"
+contentArea.Size = UDim2.new(1, 0, 1, -50)
+contentArea.Position = UDim2.new(0, 0, 0, 50)
+contentArea.BackgroundTransparency = 1
+contentArea.BorderSizePixel = 0
+contentArea.ScrollBarThickness = 4
+contentArea.ScrollBarImageColor3 = COLORS.Accent
+contentArea.CanvasSize = UDim2.new(0, 0, 0, 0)
+contentArea.AutomaticCanvasSize = Enum.AutomaticSize.Y
+contentArea.Parent = contentContainer
+
+-- Content Padding
+local contentPadding = Instance.new("UIPadding")
+contentPadding.PaddingLeft = UDim.new(0, 25)
+contentPadding.PaddingRight = UDim.new(0, 25)
+contentPadding.PaddingTop = UDim.new(0, 0)
+contentPadding.PaddingBottom = UDim.new(0, 20)
+contentPadding.Parent = contentArea
+
+-- Active tab tracker
+local activeTab = "bio scanner"
+local tabButtons = {}
+local tabContents = {}
+local currentYPos = 0
+
+-- Icon emojis for different tabs
+local iconList = {"⚡", "👁", "🎯", "⚙", "🔧", "🎨", "📊", "🔒", "🌐", "⭐", "💎", "🎮"}
+local iconIndex = 1
+
+-- Function to create category header
+local function createCategoryHeader(categoryName)
+	local header = Instance.new("TextLabel")
+	header.Name = categoryName .. "Header"
+	header.Size = UDim2.new(1, 0, 0, 30)
+	header.BackgroundTransparency = 1
+	header.Text = categoryName:upper()
+	header.TextColor3 = COLORS.TextDim
+	header.TextSize = 11
+	header.Font = Enum.Font.GothamBold
+	header.TextXAlignment = Enum.TextXAlignment.Left
+	header.TextYAlignment = Enum.TextYAlignment.Bottom
+	header.LayoutOrder = currentYPos
+	header.Parent = sidebarScroll
+	
+	currentYPos = currentYPos + 1
+	return header
+end
+
+-- Function to create sidebar tab button
+local function createTabButton(name, iconEmoji)
+	local button = Instance.new("TextButton")
+	button.Name = name .. "Button"
+	button.Size = UDim2.new(1, 0, 0, 36)
+	button.BackgroundTransparency = 1
+	button.Text = ""
+	button.AutoButtonColor = false
+	button.LayoutOrder = currentYPos
+	button.Parent = sidebarScroll
+	
+	currentYPos = currentYPos + 1
+	
+	-- Icon
+	local icon = Instance.new("TextLabel")
+	icon.Name = "Icon"
+	icon.Size = UDim2.new(0, 20, 0, 20)
+	icon.Position = UDim2.new(0, 8, 0.5, -10)
+	icon.BackgroundTransparency = 1
+	icon.Text = iconEmoji
+	icon.TextSize = 16
+	icon.TextColor3 = COLORS.Text
+	icon.Parent = button
+	
+	local label = Instance.new("TextLabel")
+	label.Name = "Label"
+	label.Size = UDim2.new(1, -40, 1, 0)
+	label.Position = UDim2.new(0, 35, 0, 0)
+	label.BackgroundTransparency = 1
+	label.Text = name
+	label.TextColor3 = COLORS.Text
+	label.TextSize = 13
+	label.Font = Enum.Font.Gotham
+	label.TextXAlignment = Enum.TextXAlignment.Left
+	label.Parent = button
+	
+	-- Active indicator
+	local activeIndicator = Instance.new("Frame")
+	activeIndicator.Name = "ActiveIndicator"
+	activeIndicator.Size = UDim2.new(0, 2, 0, 20)
+	activeIndicator.Position = UDim2.new(0, 0, 0.5, -10)
+	activeIndicator.BackgroundColor3 = COLORS.Accent
+	activeIndicator.BorderSizePixel = 0
+	activeIndicator.Visible = false
+	activeIndicator.Parent = button
+	
+	-- Hover effect
+	button.MouseEnter:Connect(function()
+		if activeTab ~= name:lower() then
+			label.TextColor3 = COLORS.TextBright
+			icon.TextColor3 = COLORS.Accent
+		end
+	end)
+	
+	button.MouseLeave:Connect(function()
+		if activeTab ~= name:lower() then
+			label.TextColor3 = COLORS.Text
+			icon.TextColor3 = COLORS.Text
+		end
+	end)
+	
+	-- Click handler
+	button.MouseButton1Click:Connect(function()
+		activeTab = name:lower()
+		-- Update all buttons
+		for tabName, tabData in pairs(tabButtons) do
+			if tabName == name:lower() then
+				tabData.label.TextColor3 = COLORS.Accent
+				tabData.icon.TextColor3 = COLORS.Accent
+				tabData.indicator.Visible = true
+			else
+				tabData.label.TextColor3 = COLORS.Text
+				tabData.icon.TextColor3 = COLORS.Text
+				tabData.indicator.Visible = false
+			end
+		end
+		-- Show/hide tab content
+		for tabName, tabContent in pairs(tabContents) do
+			tabContent.Visible = (tabName == name:lower())
+		end
+		print(name .. " tab selected")
+	end)
+	
+	tabButtons[name:lower()] = {button = button, label = label, icon = icon, indicator = activeIndicator}
+	return button
+end
+
+-- Add UIListLayout to sidebar scroll
+local sidebarLayout = Instance.new("UIListLayout")
+sidebarLayout.SortOrder = Enum.SortOrder.LayoutOrder
+sidebarLayout.Padding = UDim.new(0, 2)
+sidebarLayout.Parent = sidebarScroll
+
+-- Helper function to create content tab
+local function createContentTab(tabName)
+	local content = Instance.new("Frame")
+	content.Name = tabName .. "Content"
+	content.Size = UDim2.new(1, 0, 0, 0)
+	content.BackgroundTransparency = 1
+	content.AutomaticSize = Enum.AutomaticSize.Y
+	content.Visible = false
+	content.Parent = contentArea
+	
+	local layout = Instance.new("UIListLayout")
+	layout.SortOrder = Enum.SortOrder.LayoutOrder
+	layout.Padding = UDim.new(0, 15)
+	layout.Parent = content
+	
+	tabContents[tabName:lower()] = content
+	return content
+end
+
+-- Helper function to create section
+local function createSection(title, parent)
+	local section = Instance.new("Frame")
+	section.Name = title .. "Section"
+	section.Size = UDim2.new(1, 0, 0, 0)
+	section.BackgroundTransparency = 1
+	section.AutomaticSize = Enum.AutomaticSize.Y
+	section.LayoutOrder = #parent:GetChildren()
+	section.Parent = parent
+	
+	local sectionTitle = Instance.new("TextLabel")
+	sectionTitle.Name = "Title"
+sectionTitle.Size = UDim2.new(1, 0, 0, 20)
+sectionTitle.Position = UDim2.new(0, 0, 0, -4)
+	sectionTitle.BackgroundTransparency = 1
+	sectionTitle.Text = title
+	sectionTitle.TextColor3 = COLORS.TextBright
+sectionTitle.TextSize = 18
+	sectionTitle.Font = Enum.Font.GothamBold
+	sectionTitle.TextXAlignment = Enum.TextXAlignment.Left
+	sectionTitle.Parent = section
+	
+	local layout = Instance.new("UIListLayout")
+	layout.SortOrder = Enum.SortOrder.LayoutOrder
+	layout.Padding = UDim.new(0, 12)
+	layout.Parent = section
+	
+	return section
+end
+
+-- Helper function to create toggle
+local function createToggle(name, parent)
+	local toggle = Instance.new("Frame")
+	toggle.Name = name
+	toggle.Size = UDim2.new(1, 0, 0, 30)
+	toggle.BackgroundTransparency = 1
+	toggle.LayoutOrder = #parent:GetChildren()
+	toggle.Parent = parent
+	
+	local label = Instance.new("TextLabel")
+	label.Size = UDim2.new(1, -60, 1, 0)
+	label.BackgroundTransparency = 1
+	label.Text = name
+	label.TextColor3 = COLORS.Text
+	label.TextSize = 13
+	label.Font = Enum.Font.Gotham
+	label.TextXAlignment = Enum.TextXAlignment.Left
+	label.Parent = toggle
+	
+	local toggleButton = Instance.new("TextButton")
+	toggleButton.Name = "ToggleButton"
+	toggleButton.Size = UDim2.new(0, 40, 0, 20)
+	toggleButton.Position = UDim2.new(1, -40, 0.5, -10)
+	toggleButton.BackgroundColor3 = COLORS.Separator
+	toggleButton.BorderSizePixel = 0
+	toggleButton.Text = ""
+	toggleButton.Parent = toggle
+	
+	local toggleCorner = Instance.new("UICorner")
+	toggleCorner.CornerRadius = UDim.new(0, 10)
+	toggleCorner.Parent = toggleButton
+	
+	local toggleKnob = Instance.new("Frame")
+	toggleKnob.Name = "Knob"
+	toggleKnob.Size = UDim2.new(0, 16, 0, 16)
+	toggleKnob.Position = UDim2.new(0, 2, 0.5, -8)
+	toggleKnob.BackgroundColor3 = COLORS.TextDim
+	toggleKnob.BorderSizePixel = 0
+	toggleKnob.Parent = toggleButton
+	
+	local knobCorner = Instance.new("UICorner")
+	knobCorner.CornerRadius = UDim.new(0, 8)
+	knobCorner.Parent = toggleKnob
+	
+	local toggled = false
+	toggleButton.MouseButton1Click:Connect(function()
+		toggled = not toggled
+		if toggled then
+			toggleButton.BackgroundColor3 = COLORS.Accent
+			toggleKnob.Position = UDim2.new(1, -18, 0.5, -8)
+			toggleKnob.BackgroundColor3 = COLORS.TextBright
+		else
+			toggleButton.BackgroundColor3 = COLORS.Separator
+			toggleKnob.Position = UDim2.new(0, 2, 0.5, -8)
+			toggleKnob.BackgroundColor3 = COLORS.TextDim
+		end
+		print(name .. " toggled: " .. tostring(toggled))
+	end)
+	
+	return toggle
+end
+
+-- Helper function to create slider
+local function createSlider(name, min, max, default, parent)
+	local slider = Instance.new("Frame")
+	slider.Name = name
+	slider.Size = UDim2.new(1, 0, 0, 50)
+	slider.BackgroundTransparency = 1
+	slider.LayoutOrder = #parent:GetChildren()
+	slider.Parent = parent
+	
+	local labelFrame = Instance.new("Frame")
+	labelFrame.Size = UDim2.new(1, 0, 0, 20)
+	labelFrame.BackgroundTransparency = 1
+	labelFrame.Parent = slider
+	
+	local label = Instance.new("TextLabel")
+	label.Size = UDim2.new(0.7, 0, 1, 0)
+	label.BackgroundTransparency = 1
+	label.Text = name
+	label.TextColor3 = COLORS.Text
+	label.TextSize = 13
+	label.Font = Enum.Font.Gotham
+	label.TextXAlignment = Enum.TextXAlignment.Left
+	label.Parent = labelFrame
+	
+	local valueLabel = Instance.new("TextLabel")
+	valueLabel.Size = UDim2.new(0.3, 0, 1, 0)
+	valueLabel.Position = UDim2.new(0.7, 0, 0, 0)
+	valueLabel.BackgroundTransparency = 1
+	valueLabel.Text = tostring(default)
+	valueLabel.TextColor3 = COLORS.Accent
+	valueLabel.TextSize = 13
+	valueLabel.Font = Enum.Font.GothamBold
+	valueLabel.TextXAlignment = Enum.TextXAlignment.Right
+	valueLabel.Parent = labelFrame
+	
+	local sliderBg = Instance.new("Frame")
+	sliderBg.Name = "SliderBg"
+	sliderBg.Size = UDim2.new(1, 0, 0, 6)
+	sliderBg.Position = UDim2.new(0, 0, 0, 30)
+	sliderBg.BackgroundColor3 = COLORS.Separator
+	sliderBg.BorderSizePixel = 0
+	sliderBg.Parent = slider
+	
+	local sliderCorner = Instance.new("UICorner")
+	sliderCorner.CornerRadius = UDim.new(0, 3)
+	sliderCorner.Parent = sliderBg
+	
+	local sliderFill = Instance.new("Frame")
+	sliderFill.Name = "Fill"
+	sliderFill.Size = UDim2.new((default - min) / (max - min), 0, 1, 0)
+	sliderFill.BackgroundColor3 = COLORS.Accent
+	sliderFill.BorderSizePixel = 0
+	sliderFill.Parent = sliderBg
+	
+	local fillCorner = Instance.new("UICorner")
+	fillCorner.CornerRadius = UDim.new(0, 3)
+	fillCorner.Parent = sliderFill
+	
+	return slider
+end
+
+-- MAIN CATEGORY
+createCategoryHeader("Main")
+
+-- Bio Scanner tab
+local bioContent = createContentTab("Bio Scanner")
+local bioSection = createSection("Bio Scanner", bioContent)
+
+-- Bio Scanner UI: target input and data labels
+local bioTargetBox, statsTargetBox
+bioTargetBox = Instance.new("TextBox")
+bioTargetBox.Name = "TargetBox"
+bioTargetBox.Size = UDim2.new(1, -60, 0, 30)
+bioTargetBox.BackgroundColor3 = COLORS.Sidebar
+bioTargetBox.BorderSizePixel = 0
+bioTargetBox.Text = ""
+bioTargetBox.PlaceholderText = "Enter player name (blank = self)"
+bioTargetBox.TextColor3 = COLORS.Text
+bioTargetBox.TextSize = 15
+bioTargetBox.Font = Enum.Font.Gotham
+bioTargetBox.ClearTextOnFocus = false
+bioTargetBox.Parent = bioSection
+
+local bioTargetCorner = Instance.new("UICorner")
+bioTargetCorner.CornerRadius = UDim.new(0, 6)
+bioTargetCorner.Parent = bioTargetBox
+
+-- Data labels
+local function makeBioLabel(labelText)
+	local lbl = Instance.new("TextLabel")
+lbl.Size = UDim2.new(1, 0, 0, 24)
+	lbl.BackgroundTransparency = 1
+	lbl.TextColor3 = COLORS.Text
+lbl.TextSize = 15
+	lbl.Font = Enum.Font.GothamSemibold
+	lbl.TextXAlignment = Enum.TextXAlignment.Left
+	lbl.Text = labelText .. ": [N/A]"
+	lbl.Parent = bioSection
+	return lbl
+end
+
+local bioLabels = {
+	Subject = makeBioLabel("Subject"),
+	Exposure = makeBioLabel("Exposure"),
+	Strength = makeBioLabel("Strength"),
+	Agility = makeBioLabel("Agility"),
+	Intelligence = makeBioLabel("Intelligence"),
+	MutationType = makeBioLabel("MutationType"),
+	Evolution = makeBioLabel("Evolution"),
+	AdvancedMutation = makeBioLabel("AdvancedMutation"),
+	Weight = makeBioLabel("Weight"),
+	Health = makeBioLabel("Health"),
+}
+
+-- Bio bottom health bar (sleek)
+local bioHealthBarBg = Instance.new("Frame")
+bioHealthBarBg.Name = "BioHPBg"
+bioHealthBarBg.Size = UDim2.new(1, -80, 0, 12)
+bioHealthBarBg.Position = UDim2.new(0, 10, 0, 0)
+bioHealthBarBg.BackgroundColor3 = COLORS.Separator
+bioHealthBarBg.BorderSizePixel = 0
+bioHealthBarBg.BackgroundTransparency = 0.2
+bioHealthBarBg.LayoutOrder = 9999
+bioHealthBarBg.Parent = bioSection
+local bioHpCorner = Instance.new("UICorner", bioHealthBarBg)
+bioHpCorner.CornerRadius = UDim.new(0, 5)
+local bioHealthFill = Instance.new("Frame")
+bioHealthFill.Name = "Fill"
+bioHealthFill.Size = UDim2.new(0, 0, 1, 0)
+bioHealthFill.BackgroundColor3 = Color3.fromRGB(0, 200, 0)
+bioHealthFill.BorderSizePixel = 0
+bioHealthFill.Parent = bioHealthBarBg
+local bioHpFillCorner = Instance.new("UICorner", bioHealthFill)
+bioHpFillCorner.CornerRadius = UDim.new(0, 5)
+local bioHpGrad = Instance.new("UIGradient", bioHealthFill)
+bioHpGrad.Rotation = 0
+bioHpGrad.Color = ColorSequence.new({
+	ColorSequenceKeypoint.new(0.0, Color3.fromRGB(220, 60, 60)),
+	ColorSequenceKeypoint.new(0.5, Color3.fromRGB(255, 200, 60)),
+	ColorSequenceKeypoint.new(1.0, Color3.fromRGB(60, 200, 60))
+})
+
+-- Helpers for fetching data (client-side only)
+local function getPlayerAttr(targetPlayer, attrName)
+	if not targetPlayer then return nil end
+	local ok, result = pcall(function()
+		return targetPlayer:GetAttribute(attrName)
+	end)
+	return ok and result or nil
+end
+
+local function getCharAttr(char, attrName)
+	if not char then return nil end
+	local ok, result = pcall(function()
+		return char:GetAttribute(attrName)
+	end)
+	return ok and result or nil
+end
+
+local function getDataValue(targetPlayer, valueName)
+	if not targetPlayer then return nil end
+	local ok, result = pcall(function()
+		local data = targetPlayer:FindFirstChild("Data")
+		local v = data and data:FindFirstChild(valueName)
+		return v and v.Value or nil
+	end)
+	return ok and result or nil
+end
+
+local function getLeaderstats(targetPlayer, statName)
+	if not targetPlayer then return nil end
+	local ok, result = pcall(function()
+		local ls = targetPlayer:FindFirstChild("leaderstats")
+		local v = ls and ls:FindFirstChild(statName)
+		return v and v.Value or nil
+	end)
+	return ok and result or nil
+end
+
+local PlayersService = game:GetService("Players")
+local localPlayer = PlayersService.LocalPlayer
+
+local bioCurrentTarget = localPlayer
+local bioConns = {}
+
+-- Shared dropdown state
+local sharedDropdown = nil
+local ddHovering = false
+local ddSelecting = false
+local activeInput = nil
+
+-- attach dropdown to TextBoxes; shared dropdown follows the focused one
+local function attachDropdown(textBox)
+	if not sharedDropdown then
+		sharedDropdown = Instance.new("ScrollingFrame")
+		sharedDropdown.Name = "Dropdown"
+		sharedDropdown.Size = UDim2.new(0, 200, 0, 140)
+		sharedDropdown.BackgroundColor3 = COLORS.Sidebar
+		sharedDropdown.BackgroundTransparency = 0.12
+		sharedDropdown.BorderSizePixel = 0
+		sharedDropdown.Visible = false
+		sharedDropdown.ScrollBarThickness = 6
+		sharedDropdown.CanvasSize = UDim2.new(0, 0, 0, 0)
+		sharedDropdown.ZIndex = 1001
+sharedDropdown.Parent = screenGui
+		sharedDropdown.Active = true
+		sharedDropdown.Selectable = true
+		local stroke = Instance.new("UIStroke")
+		stroke.Color = COLORS.Separator
+		stroke.Thickness = 1
+		stroke.Parent = sharedDropdown
+		local corner = Instance.new("UICorner")
+		corner.CornerRadius = UDim.new(0, 6)
+		corner.Parent = sharedDropdown
+		local listLayout = Instance.new("UIListLayout", sharedDropdown)
+		listLayout.Padding = UDim.new(0, 2)
+		listLayout.SortOrder = Enum.SortOrder.LayoutOrder
+		sharedDropdown.MouseEnter:Connect(function() ddHovering = true end)
+		sharedDropdown.MouseLeave:Connect(function() ddHovering = false end)
+		-- outside click hide
+		local UIS = game:GetService("UserInputService")
+UIS.InputBegan:Connect(function(input, gpe)
+			if gpe then return end
+			if input.UserInputType == Enum.UserInputType.MouseButton1 and sharedDropdown.Visible then
+				local pos = UIS:GetMouseLocation()
+				local dpos, dsize = sharedDropdown.AbsolutePosition, sharedDropdown.AbsoluteSize
+				local insideDD = pos.X >= dpos.X and pos.X <= dpos.X + dsize.X and pos.Y >= dpos.Y and pos.Y <= dpos.Y + dsize.Y
+				local insideInput = false
+				if activeInput then
+					local ipos, isize = activeInput.AbsolutePosition, activeInput.AbsoluteSize
+					insideInput = pos.X >= ipos.X and pos.X <= ipos.X + isize.X and pos.Y >= ipos.Y and pos.Y <= ipos.Y + isize.Y
+				end
+				if not insideDD and not insideInput then
+					sharedDropdown.Visible = false
+				end
+			end
+		end)
+	end
+
+	local function positionDropdown()
+		if not activeInput then return end
+		local absPos = activeInput.AbsolutePosition
+		local absSize = activeInput.AbsoluteSize
+		sharedDropdown.Position = UDim2.fromOffset(absPos.X, absPos.Y + absSize.Y + 4)
+		sharedDropdown.Size = UDim2.fromOffset(absSize.X, 140)
+	end
+
+	local function updateDropdown(searchText)
+		for _, child in ipairs(sharedDropdown:GetChildren()) do
+			if child:IsA("TextButton") then child:Destroy() end
+		end
+		searchText = (searchText or ""):lower()
+		local results = {}
+		for _, p in ipairs(PlayersService:GetPlayers()) do
+			local nm = p.Name:lower()
+			if searchText == "" or nm:sub(1, #searchText) == searchText then table.insert(results, p) end
+		end
+		for _, p in ipairs(PlayersService:GetPlayers()) do
+			local nm = p.Name:lower()
+			if searchText ~= "" and nm:find(searchText, 1, true) and nm:sub(1, #searchText) ~= searchText then table.insert(results, p) end
+		end
+		local maxResults = 10
+		for i = 1, math.min(#results, maxResults) do
+			local p = results[i]
+			local btn = Instance.new("TextButton")
+			btn.Size = UDim2.new(1, -8, 0, 28)
+			btn.Position = UDim2.new(0, 4, 0, 0)
+			btn.BackgroundColor3 = COLORS.ButtonHover
+			btn.Text = p.Name
+			btn.Font = Enum.Font.Gotham
+			btn.TextSize = 14
+			btn.TextColor3 = COLORS.Text
+			btn.TextXAlignment = Enum.TextXAlignment.Left
+			btn.ZIndex = 1002
+			btn.Parent = sharedDropdown
+			local pad = Instance.new("UIPadding", btn)
+			pad.PaddingLeft = UDim.new(0, 10)
+			local bcorner = Instance.new("UICorner")
+			bcorner.CornerRadius = UDim.new(0, 6)
+			bcorner.Parent = btn
+btn.Activated:Connect(function()
+			sharedDropdown.Visible = false
+			if bioTargetBox then bioTargetBox.Text = p.Name end
+			if statsTargetBox then statsTargetBox.Text = p.Name end
+			selectBioTargetByName(p.Name)
+		end)
+		end
+		local listLayout = sharedDropdown:FindFirstChildOfClass("UIListLayout")
+		if listLayout then
+			sharedDropdown.CanvasSize = UDim2.new(0, 0, 0, listLayout.AbsoluteContentSize.Y)
+		end
+		sharedDropdown.Visible = (#results > 0)
+		positionDropdown()
+		-- auto-select exact match without pressing enter
+		for _, p in ipairs(results) do
+if p.Name:lower() == searchText and searchText ~= "" then
+			sharedDropdown.Visible = false
+			if bioTargetBox then bioTargetBox.Text = p.Name end
+			if statsTargetBox then statsTargetBox.Text = p.Name end
+			selectBioTargetByName(p.Name)
+			break
+		end
+		end
+	end
+
+textBox:GetPropertyChangedSignal("Text"):Connect(function()
+		if activeInput == textBox and textBox:IsFocused() then
+			updateDropdown(textBox.Text)
+		end
+	end)
+textBox.Focused:Connect(function()
+		activeInput = textBox
+		-- show suggestions even if text is empty
+		updateDropdown(textBox.Text)
+		sharedDropdown.Visible = true
+	end)
+	textBox.FocusLost:Connect(function()
+		-- do not hide on focus lost; selection and outside-click will hide it
+		if textBox.Text == "" then
+			selectBioTargetByName("")
+		end
+	end)
+end
+
+local function disconnectBio()
+	for _, c in ipairs(bioConns) do pcall(function() c:Disconnect() end) end
+	table.clear(bioConns)
+end
+
+local function updateBio()
+	local target = bioCurrentTarget
+	if not target then
+		for _, l in pairs(bioLabels) do l.Text = l.Text:match("^[^:]+") .. ": [N/A]" end
+		return
+	end
+	bioLabels.Subject.Text = "Subject: " .. target.Name
+	local char = target.Character
+	-- Health
+	local h, mh = nil, nil
+	local hum = char and char:FindFirstChildOfClass("Humanoid")
+	if hum then h, mh = hum.Health, hum.MaxHealth end
+	if h and mh and mh > 0 then
+		bioLabels.Health.Text = ("Health: %d / %d"):format(h, mh)
+		-- update sleek bottom bar
+		bioHealthFill.Size = UDim2.new(math.clamp(h/mh,0,1), 0, 1, 0)
+	else
+		bioLabels.Health.Text = "Health: [N/A]"
+	end
+		-- Bio attributes (Player:GetAttribute only)
+		local function P(key) return getPlayerAttr(target, key) end
+		local exposure = P("Exposure")
+		local strength = P("StrengthAttribute") or P("Strength")
+		local agility = P("AgilityAttribute") or P("Agility")
+		local intelligence = P("IntelligenceAttribute") or P("Intelligence")
+		local mutationType = P("MutationType")
+		local potentialEvolution = P("PotentialEvolution")
+		local evolutionType = P("EvolutionType")
+		local advancedMutation = P("HasReachedAdvancedMutation")
+		local weight = P("Weight")
+	
+	local function numfmt(v)
+		return type(v) == "number" and string.format("%.2f", v) or "N/A"
+	end
+	bioLabels.Exposure.Text = "Exposure: " .. numfmt(exposure)
+	bioLabels.Strength.Text = "Strength: " .. numfmt(strength)
+	bioLabels.Agility.Text = "Agility: " .. numfmt(agility)
+	bioLabels.Intelligence.Text = "Intelligence: " .. numfmt(intelligence)
+	bioLabels.MutationType.Text = "MutationType: " .. tostring(mutationType or "N/A")
+	local evolutionInfo = "N/A"
+	if evolutionType then evolutionInfo = "EVOLUTION // " .. evolutionType
+	elseif potentialEvolution then evolutionInfo = "POTENTIAL // " .. potentialEvolution
+	elseif advancedMutation then evolutionInfo = "ADVANCED"
+	elseif exposure then evolutionInfo = "BASIC" end
+	bioLabels.Evolution.Text = "Evolution: " .. evolutionInfo
+	bioLabels.AdvancedMutation.Text = "AdvancedMutation: " .. tostring(advancedMutation or "N/A")
+if type(weight) == "number" then
+		local wtext = string.format("Weight: %.2f kg", weight)
+		local c = Color3.fromRGB(200,255,200)
+		if math.abs(weight - 77.2) < 1e-6 then
+			c = Color3.fromRGB(255,215,0)
+			wtext = wtext .. " [PERFECT]"
+		elseif weight >= 60 and weight < 80 then
+			c = Color3.fromRGB(100,255,100)
+			wtext = wtext .. " [Average]"
+		elseif weight >= 80 and weight <= 120 then
+			c = Color3.fromRGB(255,150,100)
+			wtext = wtext .. " [Overweight]"
+		elseif weight >= 50 and weight < 60 then
+			c = Color3.fromRGB(150,200,255)
+			wtext = wtext .. " [Underweight]"
+		else
+			c = Color3.fromRGB(255,100,100)
+			wtext = wtext .. " [Out of Range]"
+		end
+		bioLabels.Weight.TextColor3 = c
+		bioLabels.Weight.Text = wtext
+	else
+		bioLabels.Weight.Text = "Weight: N/A"
+		bioLabels.Weight.TextColor3 = COLORS.Text
+	end
+end
+
+-- Weight info popup
+local weightInfo = Instance.new("Frame")
+weightInfo.Name = "WeightInfo"
+weightInfo.Size = UDim2.new(0, 340, 0, 180)
+weightInfo.BackgroundColor3 = Color3.fromRGB(40, 44, 52)
+weightInfo.BackgroundTransparency = 0.2
+weightInfo.BorderSizePixel = 0
+weightInfo.Visible = false
+weightInfo.ZIndex = 500
+local wCorner = Instance.new("UICorner", weightInfo)
+wCorner.CornerRadius = UDim.new(0, 8)
+local wStroke = Instance.new("UIStroke", weightInfo)
+wStroke.Color = COLORS.Separator
+wStroke.Thickness = 1
+local wPad = Instance.new("UIPadding", weightInfo)
+wPad.PaddingTop = UDim.new(0, 12)
+wPad.PaddingLeft = UDim.new(0, 14)
+wPad.PaddingRight = UDim.new(0, 14)
+wPad.PaddingBottom = UDim.new(0, 12)
+local wLayout = Instance.new("UIListLayout", weightInfo)
+wLayout.Padding = UDim.new(0, 6)
+wLayout.SortOrder = Enum.SortOrder.LayoutOrder
+
+local function addLine(text)
+	local l = Instance.new("TextLabel")
+	l.Size = UDim2.new(1, 0, 0, 20)
+	l.BackgroundTransparency = 1
+	l.Text = text
+	l.TextColor3 = COLORS.Text
+l.TextSize = 14
+	l.Font = Enum.Font.Gotham
+	l.TextXAlignment = Enum.TextXAlignment.Left
+	l.Parent = weightInfo
+end
+addLine("Weight Guide:")
+addLine("- PERFECT: 77.2 kg")
+addLine("- Average: 60 - 80 kg")
+addLine("- Underweight: 50 - 60 kg")
+addLine("- Overweight: 80 - 120 kg")
+addLine("- Out of Range: otherwise")
+
+weightInfo.Parent = mainFrame
+
+-- center and overlay with blur
+weightInfo.AnchorPoint = Vector2.new(0.5, 0.5)
+weightInfo.Position = UDim2.fromScale(0.5, 0.5)
+
+local weightOverlay = Instance.new("Frame")
+weightOverlay.Name = "WeightOverlay"
+weightOverlay.Size = UDim2.fromScale(1, 1)
+weightOverlay.BackgroundColor3 = Color3.new(0,0,0)
+weightOverlay.BackgroundTransparency = 1
+weightOverlay.Visible = false
+-- close on overlay click
+weightOverlay.InputBegan:Connect(function(input)
+	if input.UserInputType == Enum.UserInputType.MouseButton1 then
+		if weightOverlay.Visible then
+			hideWeightInfo()
+		end
+	end
+end)
+weightOverlay.ZIndex = 499
+weightOverlay.Parent = mainFrame
+
+local TweenService = game:GetService("TweenService")
+local Lighting = game:GetService("Lighting")
+local weightBlur = Lighting:FindFirstChild("WeightPopupBlur")
+if not weightBlur then
+	weightBlur = Instance.new("BlurEffect")
+	weightBlur.Name = "WeightPopupBlur"
+	weightBlur.Enabled = false
+	weightBlur.Size = 0
+	weightBlur.Parent = Lighting
+end
+
+local function showWeightInfo(anchorLabel)
+	weightOverlay.Visible = true
+	TweenService:Create(weightOverlay, TweenInfo.new(0.2, Enum.EasingStyle.Linear, Enum.EasingDirection.Out), {BackgroundTransparency = 0.5}):Play()
+weightInfo.BackgroundTransparency = 1
+	weightInfo.Size = UDim2.new(0, 320, 0, 0)
+	weightInfo.Visible = true
+	TweenService:Create(weightInfo, TweenInfo.new(0.22, Enum.EasingStyle.Quint, Enum.EasingDirection.Out), {BackgroundTransparency = 0.2, Size = UDim2.new(0, 340, 0, 180)}):Play()
+	weightBlur.Enabled = true
+	TweenService:Create(weightBlur, TweenInfo.new(0.2), {Size = 12}):Play()
+end
+local function hideWeightInfo()
+local t1 = TweenService:Create(weightInfo, TweenInfo.new(0.18, Enum.EasingStyle.Quint, Enum.EasingDirection.In), {BackgroundTransparency = 1, Size = UDim2.new(0, 320, 0, 0)})
+	local t2 = TweenService:Create(weightOverlay, TweenInfo.new(0.18, Enum.EasingStyle.Linear, Enum.EasingDirection.In), {BackgroundTransparency = 1})
+	t1:Play(); t2:Play()
+	t1.Completed:Wait()
+	weightInfo.Visible = false
+	weightOverlay.Visible = false
+	TweenService:Create(weightBlur, TweenInfo.new(0.15), {Size = 0}):Play()
+	weightBlur.Enabled = false
+end
+
+-- Make weight label clickable directly
+local weightOpen = false
+bioLabels.Weight.InputBegan:Connect(function(input)
+	if input.UserInputType == Enum.UserInputType.MouseButton1 then
+		weightOpen = not weightOpen
+		if weightOpen then
+			showWeightInfo(bioLabels.Weight)
+		else
+			hideWeightInfo()
+		end
+	end
+end)
+
+local function selectBioTargetByName(name)
+	local target = nil
+	if not name or name == "" then
+		target = localPlayer
+	else
+		target = PlayersService:FindFirstChild(name)
+	end
+	if target then
+		disconnectBio()
+		bioCurrentTarget = target
+		-- sync both inputs to selected (blank = self)
+		if bioTargetBox then bioTargetBox.Text = (name or "") end
+		if statsTargetBox then statsTargetBox.Text = (name or "") end
+		updateBio()
+		updateStats()
+		-- bind signals
+		local char = target.Character
+		if char then
+			local hum = char:FindFirstChildOfClass("Humanoid")
+			if hum then
+				local c1 = hum.HealthChanged:Connect(function()
+					updateBio()
+					updateStats()
+				end)
+				table.insert(bioConns, c1)
+				local c1b = hum:GetPropertyChangedSignal("WalkSpeed"):Connect(function()
+					updateStats()
+				end)
+				table.insert(bioConns, c1b)
+			end
+			local c2 = char.AttributeChanged:Connect(function()
+				updateBio(); updateStats()
+			end)
+			table.insert(bioConns, c2)
+		end
+-- rebind on respawn
+		local cChar = target.CharacterAdded:Connect(function()
+			updateBio(); updateStats()
+			local newChar = target.Character
+			if newChar then
+				local hum = newChar:FindFirstChildOfClass("Humanoid")
+				if hum then
+					hum:GetPropertyChangedSignal("WalkSpeed"):Connect(function() updateStats() end)
+					hum.HealthChanged:Connect(function() updateBio() end)
+				end
+			end
+		end)
+		table.insert(bioConns, cChar)
+		-- listen to Data folder changes
+		local dataFolder = target:FindFirstChild("Data")
+		if dataFolder then
+			local cDa = dataFolder.ChildAdded:Connect(function() updateStats() end)
+			table.insert(bioConns, cDa)
+			local cDr = dataFolder.ChildRemoved:Connect(function() updateStats() end)
+			table.insert(bioConns, cDr)
+			for _, child in ipairs(dataFolder:GetChildren()) do
+				local cDc = child.Changed:Connect(function() updateStats() end)
+				table.insert(bioConns, cDc)
+			end
+		end
+		local c3 = target.AttributeChanged:Connect(function()
+			updateBio(); updateStats()
+		end)
+table.insert(bioConns, c3)
+		-- ultra-high-frequency refresh (every frame before render)
+		local RunService = game:GetService("RunService")
+local cRS = RunService.RenderStepped:Connect(function()
+			-- always compute against latest selection
+			updateStats()
+			updateBio()
+		end)
+		table.insert(bioConns, cRS)
+	end
+end
+
+attachDropdown(bioTargetBox)
+
+bioTargetBox.FocusLost:Connect(function()
+	if bioTargetBox.Text ~= "" then
+		selectBioTargetByName(bioTargetBox.Text)
+	else
+		selectBioTargetByName("")
+	end
+end)
+
+-- Stats tab (moved metrics)
+local statsContent = createContentTab("Stats")
+local statsSection = createSection("Stats", statsContent)
+
+statsTargetBox = Instance.new("TextBox")
+statsTargetBox.Name = "TargetBox"
+statsTargetBox.Size = UDim2.new(1, -60, 0, 30)
+statsTargetBox.BackgroundColor3 = COLORS.Sidebar
+statsTargetBox.BorderSizePixel = 0
+statsTargetBox.Text = ""
+statsTargetBox.PlaceholderText = "Enter player name (blank = self)"
+statsTargetBox.TextColor3 = COLORS.Text
+statsTargetBox.TextSize = 15
+statsTargetBox.Font = Enum.Font.Gotham
+statsTargetBox.ClearTextOnFocus = false
+statsTargetBox.Parent = statsSection
+local statsTargetCorner = Instance.new("UICorner")
+statsTargetCorner.CornerRadius = UDim.new(0, 6)
+statsTargetCorner.Parent = statsTargetBox
+
+attachDropdown(statsTargetBox)
+
+local function makeStatsLabel(labelText)
+	local lbl = Instance.new("TextLabel")
+lbl.Size = UDim2.new(1, 0, 0, 24)
+	lbl.BackgroundTransparency = 1
+	lbl.TextColor3 = COLORS.Text
+lbl.TextSize = 15
+	lbl.Font = Enum.Font.GothamSemibold
+	lbl.TextXAlignment = Enum.TextXAlignment.Left
+	lbl.Text = labelText .. ": [N/A]"
+	lbl.Parent = statsSection
+	return lbl
+end
+
+local statsLabels = {
+	Resilience = makeStatsLabel("Resilience"),
+	MaxResilience = makeStatsLabel("Max Resilience"),
+	WalkSpeed = makeStatsLabel("WalkSpeed"),
+	SpeedDifference = makeStatsLabel("Speed Difference"),
+	RegionCode = makeStatsLabel("Region Code"),
+	IsElite = makeStatsLabel("Is Elite"),
+	CurrentZone = makeStatsLabel("Current Zone"),
+	TeamXP = makeStatsLabel("Team XP"),
+	Credits = makeStatsLabel("Credits"),
+	ActivePerks = makeStatsLabel("Active Perks"),
+}
+
+local function updateStats()
+	local target = bioCurrentTarget
+	local char = target and target.Character or nil
+	-- Resilience (Player:GetAttribute only)
+local r = getPlayerAttr(target, "Resilience")
+	local mr = getPlayerAttr(target, "MaxResilience")
+	statsLabels.Resilience.Text = "Resilience: " .. tostring(r or "N/A")
+	statsLabels.MaxResilience.Text = "Max Resilience: " .. tostring(mr or "N/A")
+	-- WalkSpeed + diff
+	local ws, diff
+	if char then
+		local hum = char:FindFirstChildOfClass("Humanoid")
+		ws = hum and hum.WalkSpeed or nil
+	end
+	statsLabels.WalkSpeed.Text = "WalkSpeed: " .. (ws and string.format("%.1f", ws) or "[N/A]")
+	if ws then
+		diff = ws - 9 -- baseline default; you can wire to settings later
+		statsLabels.SpeedDifference.Text = string.format("Speed Difference: %s", (diff >= 0 and "+" or "") .. string.format("%.1f", diff))
+	else
+		statsLabels.SpeedDifference.Text = "Speed Difference: N/A"
+	end
+	-- Region / flags (Player:GetAttribute only)
+local region = getPlayerAttr(target, "RegionCode")
+	statsLabels.RegionCode.Text = "Region Code: " .. tostring(region or "N/A")
+	local isElite = getPlayerAttr(target, "IsElite")
+	statsLabels.IsElite.Text = "Is Elite: " .. tostring(isElite or "N/A")
+	local currentZone = getPlayerAttr(target, "CurrentZone")
+	statsLabels.CurrentZone.Text = "Current Zone: " .. tostring(currentZone or "N/A")
+	-- Credits (Player:GetAttribute only)
+local credits = getPlayerAttr(target, "Credits")
+	if type(credits) == "number" then
+		local s = tostring(math.floor(credits)):reverse():gsub("(%d%d%d)", "%1,"):reverse():gsub("^,", "")
+		statsLabels.Credits.Text = "Credits: " .. s
+	else
+		statsLabels.Credits.Text = "Credits: N/A"
+	end
+	-- Active perks
+	local perks = {}
+	if target then
+		local dataFolder = target:FindFirstChild("Data")
+		if dataFolder then
+			for _, child in ipairs(dataFolder:GetChildren()) do
+				if (child:IsA("BoolValue") and child.Value) or (child:IsA("IntValue") and child.Value > 0 and child.Name:lower():find("perk")) then
+					table.insert(perks, child.Name)
+				end
+			end
+		end
+	end
+statsLabels.ActivePerks.Text = (#perks > 0) and ("Active Perks: " .. table.concat(perks, ", ")) or "Active Perks: None"
+end
+
+-- Team XP integration
+local ReplicatedStorage = game:GetService("ReplicatedStorage")
+local function safeWaitFor(child, name)
+	local ok, result = pcall(function() return child:WaitForChild(name, 3) end)
+	return ok and result or nil
+end
+local remotes = safeWaitFor(ReplicatedStorage, "Remotes")
+local functions = remotes and safeWaitFor(remotes, "Functions")
+local getRankRemote = functions and functions:FindFirstChild("GetRank")
+local XPUpdateEvent = safeWaitFor(ReplicatedStorage, "XPUpdate")
+
+local function refreshTeamXP()
+	local lp = game:GetService("Players").LocalPlayer
+	local team = lp and lp.Team
+	if not team or not getRankRemote or not getRankRemote.InvokeServer then
+		statsLabels.TeamXP.Text = "Team XP: N/A"
+		return
+	end
+	local ok, v1, v2, v3, v4, v5 = pcall(function()
+		-- returns: xp, rankName, min, max, nextRank
+		return getRankRemote:InvokeServer(team.Name)
+	end)
+	if ok and v1 then
+		local xp = v1
+		local rankName = v2
+		local minXP, maxXP, nextRank = v3, v4, v5
+		local remaining = (type(maxXP) == "number" and type(xp) == "number") and math.max(0, maxXP - xp) or nil
+		local line = "Team XP: " .. tostring(math.floor(xp))
+		if rankName then line = line .. " (" .. tostring(rankName) .. ")" end
+		if remaining then line = line .. " • " .. tostring(math.floor(remaining)) .. " to next" end
+		statsLabels.TeamXP.Text = line
+	else
+		statsLabels.TeamXP.Text = "Team XP: N/A"
+	end
+end
+
+-- Update on team change and XP events
+local lp_for_team = game:GetService("Players").LocalPlayer
+if lp_for_team then
+	lp_for_team:GetPropertyChangedSignal("Team"):Connect(refreshTeamXP)
+end
+if XPUpdateEvent then
+	XPUpdateEvent.OnClientEvent:Connect(function()
+		refreshTeamXP()
+	end)
+end
+refreshTeamXP()
+
+statsTargetBox.FocusLost:Connect(function()
+	if statsTargetBox.Text ~= "" then
+		selectBioTargetByName(statsTargetBox.Text)
+	else
+		selectBioTargetByName("")
+	end
+end)
+
+-- initial populate
+updateBio()
+updateStats()
+
+-- Create top bar button for Bio Scanner under Main category
+
+-- Main category tabs
+-- Main tabs
+createTabButton("Bio Scanner", "🧬")
+createTabButton("Stats", "📊")
+-- Perks tab
+local perksContent = createContentTab("Perks")
+local perksSection = createSection("Perks", perksContent)
+createTabButton("Perks", "🧩")
+
+-- Padding to keep toggles away from edges
+local perksPad = Instance.new("UIPadding", perksSection)
+perksPad.PaddingLeft = UDim.new(0, 24)
+perksPad.PaddingRight = UDim.new(0, 24)
+perksPad.PaddingTop = UDim.new(0, 14)
+perksPad.PaddingBottom = UDim.new(0, 14)
+
+-- Perks list with toggles
+local perksList = Instance.new("ScrollingFrame")
+perksList.Name = "PerksList"
+perksList.Size = UDim2.new(1, 0, 0, 260)
+perksList.BackgroundTransparency = 1
+perksList.ScrollBarThickness = 4
+perksList.CanvasSize = UDim2.new(0, 0, 0, 0)
+perksList.AutomaticCanvasSize = Enum.AutomaticSize.Y
+perksList.Parent = perksSection
+local perksLayout = Instance.new("UIListLayout", perksList)
+perksLayout.Padding = UDim.new(0, 8)
+perksLayout.SortOrder = Enum.SortOrder.LayoutOrder
+perksList.ZIndex = 1
+
+local function makePerkRow(valueObj)
+	local row = Instance.new("Frame")
+	row.Size = UDim2.new(1, 0, 0, 30)
+	row.BackgroundTransparency = 1
+	row.Parent = perksList
+
+	local nameLabel = Instance.new("TextLabel")
+	nameLabel.Size = UDim2.new(1, -60, 1, 0)
+	nameLabel.BackgroundTransparency = 1
+	nameLabel.Text = valueObj.Name
+	nameLabel.TextColor3 = COLORS.Text
+	nameLabel.TextSize = 14
+	nameLabel.Font = Enum.Font.Gotham
+	nameLabel.TextXAlignment = Enum.TextXAlignment.Left
+	nameLabel.Parent = row
+
+	local toggleButton = Instance.new("TextButton")
+	toggleButton.Name = "Toggle"
+	toggleButton.Size = UDim2.new(0, 40, 0, 20)
+	toggleButton.Position = UDim2.new(1, -40, 0.5, -10)
+	toggleButton.BackgroundColor3 = COLORS.Separator
+	toggleButton.BorderSizePixel = 0
+	toggleButton.Text = ""
+	toggleButton.Parent = row
+	local tCorner = Instance.new("UICorner", toggleButton)
+	tCorner.CornerRadius = UDim.new(0, 10)
+	local knob = Instance.new("Frame", toggleButton)
+	knob.Name = "Knob"
+	knob.Size = UDim2.new(0, 16, 0, 16)
+	knob.Position = UDim2.new(0, 2, 0.5, -8)
+	knob.BackgroundColor3 = COLORS.TextDim
+	knob.BorderSizePixel = 0
+	local kCorner = Instance.new("UICorner", knob)
+	kCorner.CornerRadius = UDim.new(0, 8)
+
+	local function setVisual(on)
+		if on then
+			toggleButton.BackgroundColor3 = COLORS.Accent
+			knob.Position = UDim2.new(1, -18, 0.5, -8)
+			knob.BackgroundColor3 = COLORS.TextBright
+		else
+			toggleButton.BackgroundColor3 = COLORS.Separator
+			knob.Position = UDim2.new(0, 2, 0.5, -8)
+			knob.BackgroundColor3 = COLORS.TextDim
+		end
+	end
+
+	local function getEnabled()
+		if valueObj:IsA("BoolValue") then return valueObj.Value end
+		if valueObj:IsA("IntValue") then return valueObj.Value > 0 end
+		return false
+	end
+	setVisual(getEnabled())
+
+	toggleButton.MouseButton1Click:Connect(function()
+		local want = not getEnabled()
+		if valueObj:IsA("BoolValue") then
+			pcall(function() valueObj.Value = want end)
+		elseif valueObj:IsA("IntValue") then
+			pcall(function() valueObj.Value = want and 1 or 0 end)
+		end
+		setVisual(want)
+	end)
+
+	valueObj.Changed:Connect(function(prop)
+		if prop == "Value" then setVisual(getEnabled()) end
+	end)
+
+	return row
+end
+
+local function refreshPerks()
+	for _, child in ipairs(perksList:GetChildren()) do
+		if child:IsA("Frame") then child:Destroy() end
+	end
+	local dataFolder = PlayersService.LocalPlayer:FindFirstChild("Data")
+	if not dataFolder then return end
+	for _, v in ipairs(dataFolder:GetChildren()) do
+		if v:IsA("BoolValue") or v:IsA("IntValue") then
+			makePerkRow(v)
+		end
+	end
+end
+
+refreshPerks()
+local dataFolder = PlayersService.LocalPlayer:FindFirstChild("Data")
+if dataFolder then
+	dataFolder.ChildAdded:Connect(refreshPerks)
+	dataFolder.ChildRemoved:Connect(refreshPerks)
+end
+
+-- VISUAL CATEGORY
+createCategoryHeader("Visual")
+
+local visualsContent = createContentTab("Visuals")
+local visualsSection = createSection("Visuals", visualsContent)
+createTabButton("Visuals", "🎨")
+-- MISCELLANEOUS CATEGORY
+createCategoryHeader("Miscellaneous")
+
+local miscContent = createContentTab("Misc")
+local miscSection = createSection("Misc Tools", miscContent)
+createTabButton("Misc Tools", "🔧")
+-- Set first tab as active by default (Bio Scanner)
+if tabButtons["bio scanner"] and tabContents["bio scanner"] then
+	tabButtons["bio scanner"].label.TextColor3 = COLORS.Accent
+	tabButtons["bio scanner"].icon.TextColor3 = COLORS.Accent
+	tabButtons["bio scanner"].indicator.Visible = true
+	tabContents["bio scanner"].Visible = true
+end
+
+
+-- Toggle with Right Shift key
+local UserInputService = game:GetService("UserInputService")
+UserInputService.InputBegan:Connect(function(input, gameProcessed)
+	if not gameProcessed and input.KeyCode == Enum.KeyCode.RightShift then
+		mainFrame.Visible = not mainFrame.Visible
+	end
+end)
+
+print("Neverlose-style GUI loaded successfully!")
 
