@@ -18,9 +18,9 @@ if existing then existing:Destroy() end
 
 -- THEME
 local theme = {
-	bg = Color3.fromRGB(18, 19, 22),
-	panel = Color3.fromRGB(26, 27, 31),
-	subtle = Color3.fromRGB(34, 36, 42),
+	bg = Color3.fromRGB(18, 19, 22), -- main darker
+	panel = Color3.fromRGB(26, 27, 31), -- general dark panel
+	subtle = Color3.fromRGB(34, 36, 42), -- outlines / separators
 	stroke = Color3.fromRGB(48, 50, 58),
 	accent = Color3.fromRGB(92, 214, 103),
 	accentDim = Color3.fromRGB(62, 160, 78),
@@ -28,6 +28,9 @@ local theme = {
 	muted = Color3.fromRGB(160, 164, 175),
 	shadow = Color3.fromRGB(0, 0, 0),
 	red = Color3.fromRGB(255, 95, 95),
+	-- sidebar greenish tint for a closer match
+	side_g1 = Color3.fromRGB(44, 56, 48),
+	side_g2 = Color3.fromRGB(30, 34, 32),
 }
 
 -- UTIL
@@ -159,6 +162,7 @@ local top = Instance.new("Frame")
 top.Name = "TopBar"
 top.Size = UDim2.new(1, 0, 0, 44)
 top.BackgroundColor3 = theme.bg
+top.BackgroundTransparency = 0.25
 top.BorderSizePixel = 0
 round(top, 10)
 -- mask round only top by overlaying a separate cornered frame
@@ -193,12 +197,41 @@ local function buttonHover(btn)
 end
 buttonHover(saveBtn)
 
+-- right-side icon bar (placeholders)
+local iconsBar = Instance.new("Frame")
+iconsBar.BackgroundTransparency = 1
+iconsBar.Size = UDim2.fromOffset(120, 28)
+iconsBar.Position = UDim2.new(1, -220, 0, 8)
+iconsBar.Parent = top
+local iconsLayout = hlist(iconsBar, 8)
+
+local function topIcon(char)
+	local b = Instance.new("TextButton")
+	b.Text = char
+	b.Font = Enum.Font.Gotham
+	b.TextSize = 16
+	b.AutoButtonColor = false
+	b.Size = UDim2.fromOffset(28, 28)
+	b.BackgroundColor3 = theme.subtle
+	b.TextColor3 = theme.text
+	b.Parent = iconsBar
+	round(b, 6)
+	stroke(b, theme.stroke, 1)
+	b.MouseEnter:Connect(function() tween(b, nil, {BackgroundColor3 = theme.stroke}) end)
+	b.MouseLeave:Connect(function() tween(b, nil, {BackgroundColor3 = theme.subtle}) end)
+	return b
+end
+-- gear, script, search
+local gear = topIcon("⚙")
+local scriptIcon = topIcon("λ")
+local search = topIcon("🔍")
+
 makeDraggable(top, main)
 
 -- BODY
 local body = Instance.new("Frame")
 body.Name = "Body"
-body.BackgroundColor3 = theme.panel
+body.BackgroundTransparency = 1
 body.BorderSizePixel = 0
 body.Position = UDim2.fromOffset(0, 44)
 body.Size = UDim2.new(1, 0, 1, -44)
@@ -210,14 +243,32 @@ sidebar.Name = "Sidebar"
 sidebar.BackgroundColor3 = theme.panel -- lighter than main
 sidebar.BackgroundTransparency = 0.25
 sidebar.BorderSizePixel = 0
-sidebar.Size = UDim2.fromOffset(190, body.Size.Y.Offset)
+sidebar.Size = UDim2.new(0, 190, 1, 0)
 sidebar.Position = UDim2.fromOffset(0, 0)
 sidebar.Parent = body
 stroke(sidebar, theme.subtle, 1)
 
+-- subtle left panel gradient
+local sideGrad = Instance.new("UIGradient")
+sideGrad.Color = ColorSequence.new{
+	ColorSequenceKeypoint.new(0, theme.side_g1),
+	ColorSequenceKeypoint.new(1, theme.side_g2)
+}
+sideGrad.Rotation = 90
+sideGrad.Parent = sidebar
+
+-- divider between side and content
+local divider = Instance.new("Frame")
+divider.Name = "Divider"
+divider.BackgroundColor3 = theme.subtle
+divider.BorderSizePixel = 0
+divider.Size = UDim2.new(0, 1, 1, 0)
+divider.Position = UDim2.fromOffset(190, 0)
+divider.Parent = body
+
 local sidebarList = Instance.new("ScrollingFrame")
 sidebarList.Name = "List"
-sidebarList.Size = UDim2.new(1, 0, 1, -16)
+sidebarList.Size = UDim2.new(1, 0, 1, -80)
 sidebarList.Position = UDim2.fromOffset(0, 8)
 sidebarList.BackgroundTransparency = 1
 sidebarList.BorderSizePixel = 0
@@ -228,25 +279,52 @@ pad(sidebarList, 12, 8, 12, 8)
 
 vlist(sidebarList, 6)
 
+local currentActive
 local function sideButton(text, active)
 	local btn = Instance.new("TextButton")
-	btn.Text = text
+	btn.Text = "    " .. text -- left padding for accent bar space
 	btn.Font = Enum.Font.Gotham
 	btn.TextSize = 14
 	btn.TextXAlignment = Enum.TextXAlignment.Left
 	btn.AutoButtonColor = false
 	btn.Size = UDim2.new(1, 0, 0, 32)
-	btn.BackgroundColor3 = active and theme.subtle or theme.panel
-	btn.TextColor3 = active and theme.text or theme.muted
+	btn.BackgroundColor3 = theme.panel
+	btn.TextColor3 = theme.muted
 	round(btn, 6)
 	stroke(btn, theme.stroke, 1)
 	btn.Parent = sidebarList
+
+	local bar = Instance.new("Frame")
+	bar.Size = UDim2.new(0, 3, 1, -8)
+	bar.Position = UDim2.fromOffset(6, 4)
+	bar.BackgroundColor3 = theme.accent
+	bar.BorderSizePixel = 0
+	bar.Parent = btn
+	bar.Visible = false
+
+	local function setActive()
+		if currentActive and currentActive ~= btn then
+			currentActive.bar.Visible = false
+			currentActive.TextColor3 = theme.muted
+			currentActive.BackgroundColor3 = theme.panel
+		end
+		currentActive = btn
+		bar.Visible = true
+		btn.TextColor3 = theme.text
+		btn.BackgroundColor3 = theme.subtle
+	end
+
 	btn.MouseEnter:Connect(function()
-		if btn.BackgroundColor3 ~= theme.subtle then tween(btn, nil, {BackgroundColor3 = theme.panel}) end
+		if currentActive ~= btn then tween(btn, nil, {BackgroundColor3 = theme.panel}) end
 	end)
 	btn.MouseLeave:Connect(function()
-		if btn.BackgroundColor3 ~= theme.subtle then tween(btn, nil, {BackgroundColor3 = theme.panel}) end
+		if currentActive ~= btn then tween(btn, nil, {BackgroundColor3 = theme.panel}) end
 	end)
+
+	btn.MouseButton1Click:Connect(setActive)
+	if active then setActive() end
+
+	btn.bar = bar
 	return btn
 end
 
@@ -259,6 +337,31 @@ local cats = {
 for i, c in ipairs(cats) do
 	sideButton(c, c == "Anti Aim").LayoutOrder = i
 end
+
+-- Sidebar footer with avatar
+local footer = Instance.new("Frame")
+footer.Size = UDim2.new(1, -16, 0, 56)
+footer.Position = UDim2.new(0, 8, 1, -60)
+footer.BackgroundColor3 = theme.panel
+footer.BackgroundTransparency = 0.25
+footer.Parent = sidebar
+round(footer, 8)
+stroke(footer, theme.stroke, 1)
+
+local avatar = Instance.new("ImageLabel")
+avatar.BackgroundTransparency = 1
+avatar.Size = UDim2.fromOffset(40, 40)
+avatar.Position = UDim2.fromOffset(8, 8)
+avatar.Parent = footer
+local thumb, ready = Players:GetUserThumbnailAsync(localPlayer.UserId, Enum.ThumbnailType.HeadShot, Enum.ThumbnailSize.Size100x100)
+avatar.Image = thumb
+
+local uname = makeText(footer, localPlayer.DisplayName or localPlayer.Name, 14, theme.text, true)
+uname.Position = UDim2.fromOffset(56, 8)
+uname.Size = UDim2.fromOffset(110, 18)
+local tlabel = makeText(footer, os.date("%a %d %b %H:%M"), 12, theme.muted, false)
+tlabel.Position = UDim2.fromOffset(56, 28)
+tlabel.Size = UDim2.fromOffset(110, 16)
 
 -- CONTENT AREA
 local content = Instance.new("Frame")
@@ -412,7 +515,17 @@ local function Slider(parent, label, key, min, max, default, step, callback)
 	fill.BackgroundColor3 = theme.accent
 	fill.BorderSizePixel = 0
 	fill.Parent = container
-	round(fill, 6)
+round(fill, 6)
+
+	-- slider thumb
+	local thumb = Instance.new("Frame")
+	thumb.Size = UDim2.fromOffset(12, 12)
+	thumb.Position = UDim2.fromOffset(0, 6)
+	thumb.BackgroundColor3 = theme.accent
+	thumb.BorderSizePixel = 0
+	thumb.Parent = container
+	round(thumb, 6)
+	stroke(thumb, Color3.fromRGB(255,255,255), 1)
 
 	local drag = Instance.new("Frame")
 	drag.BackgroundTransparency = 1
@@ -441,10 +554,15 @@ local function Slider(parent, label, key, min, max, default, step, callback)
 		return math.clamp(snapped, min, max)
 	end
 
-	local function render()
-		fill.Size = UDim2.fromScale(percentFromValue(value), 1)
+local function render()
+		local p = percentFromValue(value)
+		fill.Size = UDim2.fromScale(p, 1)
 		valText.Text = string.format("%s", tostring(value))
+		local abs = container.AbsoluteSize.X
+		local x = math.clamp(p * abs, 6, math.max(6, abs - 6))
+		thumb.Position = UDim2.fromOffset(x - 6, 6)
 	end
+	container:GetPropertyChangedSignal("AbsoluteSize"):Connect(render)
 
 	local sliding = false
 	drag.InputBegan:Connect(function(input)
