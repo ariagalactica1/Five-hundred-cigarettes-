@@ -1,421 +1,339 @@
--- Pixel-Precision GAMESENSE UI (Drawing API)
--- Client-side only. Paste into your executor / LocalScript environment that exposes Drawing.
--- Design baseline: 1920x1080. Scales to actual viewport.
+-- GameSense UI - LocalScript
+-- Place this in StarterPlayer > StarterPlayerScripts
 
-local RunService = game:GetService("RunService")
-local Camera = workspace.CurrentCamera
+local Players = game:GetService("Players")
+local UserInputService = game:GetService("UserInputService")
+local player = Players.LocalPlayer
+local playerGui = player:WaitForChild("PlayerGui")
 
--- Check Drawing availability
-local ok, _ = pcall(function() return Drawing end)
-if not ok then
-    warn("Drawing API not available in this environment.")
-    return
-end
+-- Create ScreenGui
+local screenGui = Instance.new("ScreenGui")
+screenGui.Name = "GameSenseUI"
+screenGui.ResetOnSpawn = false
+screenGui.ZIndexBehavior = Enum.ZIndexBehavior.Sibling
+screenGui.Parent = playerGui
 
--- Utilities: color conversion
-local function hex(h)
-    h = h:gsub("#","")
-    if #h == 3 then h = h:sub(1,1)..h:sub(1,1)..h:sub(2,2)..h:sub(2,2)..h:sub(3,3)..h:sub(3,3) end
-    return Color3.fromRGB(tonumber(h:sub(1,2),16), tonumber(h:sub(3,4),16), tonumber(h:sub(5,6),16))
-end
-
--- Theme (matched to screenshot)
-local THEME = {
-    Background = hex("#0f1415"),    -- outer bg
-    Sidebar = hex("#0f1412"),       -- left column
-    SidebarAccent = hex("#0b1112"), -- slightly darker sidebar inner
-    Panel = hex("#161a1b"),         -- inner main background
-    PanelAccent = hex("#1f2627"),   -- inner panel darker
-    Muted = hex("#6f7576"),
-    Text = Color3.fromRGB(234,239,240),
-    Accent = hex("#4fe07a"),        -- neon green
-    DimAccent = hex("#2d7f4a"),
-    Shadow = Color3.fromRGB(0,0,0),
+-- Colors
+local colors = {
+	background = Color3.fromRGB(20, 20, 20),
+	sideBar = Color3.fromRGB(15, 15, 15),
+	panel = Color3.fromRGB(25, 25, 25),
+	hover = Color3.fromRGB(35, 35, 35),
+	green = Color3.fromRGB(140, 185, 50),
+	text = Color3.fromRGB(200, 200, 200),
+	textDim = Color3.fromRGB(120, 120, 120),
+	border = Color3.fromRGB(40, 40, 40)
 }
 
--- Baseline and scaling
-local BASE_W, BASE_H = 1920, 1080
-local function getViewport()
-    local v = Camera.ViewportSize
-    return v.X, v.Y
-end
-local function scaleVector(x,y, w,h)
-    local vw, vh = getViewport()
-    return Vector2.new((x / BASE_W) * vw, (y / BASE_H) * vh)
-end
-local function sx(px) return (px / BASE_W) * getViewport() end
-local function sy(px) return (px / BASE_H) * getViewport() end
+-- Main Frame
+local mainFrame = Instance.new("Frame")
+mainFrame.Name = "MainFrame"
+mainFrame.Size = UDim2.new(0, 700, 0, 500)
+mainFrame.Position = UDim2.new(0.5, -350, 0.5, -250)
+mainFrame.BackgroundColor3 = colors.background
+mainFrame.BorderSizePixel = 0
+mainFrame.Parent = screenGui
 
--- Drawing factories (cached)
-local function newRect()
-    local r = Drawing.new("Square")
-    r.Filled = true
-    r.Transparency = 1
-    r.Visible = true
-    r.ZIndex = 1
-    return r
-end
-local function newText()
-    local t = Drawing.new("Text")
-    t.Visible = true
-    t.Outline = true
-    t.OutlineColor = Color3.fromRGB(0,0,0)
-    t.ZIndex = 3
-    return t
-end
-local function newLine()
-    local l = Drawing.new("Line")
-    l.Visible = true
-    l.Thickness = 1
-    l.ZIndex = 2
-    return l
-end
-local function newCircle()
-    local c = Drawing.new("Circle")
-    c.Visible = true
-    c.Filled = true
-    c.NumSides = 100
-    c.ZIndex = 2
-    return c
-end
+-- Top Bar
+local topBar = Instance.new("Frame")
+topBar.Name = "TopBar"
+topBar.Size = UDim2.new(1, 0, 0, 35)
+topBar.BackgroundColor3 = colors.sideBar
+topBar.BorderSizePixel = 0
+topBar.Parent = mainFrame
 
--- Helper: rounded rectangle (composed of center rect + 4 corner circles + 4 edge rects)
-local function drawRounded(basePos, baseSize, radius, color, parts)
-    -- parts table holds created pieces to reuse, otherwise create
-    parts = parts or {}
-    parts.center = parts.center or newRect()
-    parts.center.Color = color
-    parts.center.Filled = true
-    parts.center.Transparency = 1
+local titleLabel = Instance.new("TextLabel")
+titleLabel.Name = "Title"
+titleLabel.Size = UDim2.new(0, 200, 1, 0)
+titleLabel.Position = UDim2.new(0, 10, 0, 0)
+titleLabel.BackgroundTransparency = 1
+titleLabel.Text = "GAMESENSE"
+titleLabel.TextColor3 = colors.text
+titleLabel.TextSize = 14
+titleLabel.TextXAlignment = Enum.TextXAlignment.Left
+titleLabel.Font = Enum.Font.GothamBold
+titleLabel.Parent = topBar
 
-    -- center rectangle (shrunk by radius)
-    parts.center.Position = basePos + Vector2.new(radius, radius)
-    parts.center.Size = Vector2.new(baseSize.X - radius*2, baseSize.Y - radius*2)
+-- Side Navigation
+local sideNav = Instance.new("Frame")
+sideNav.Name = "SideNav"
+sideNav.Size = UDim2.new(0, 120, 1, -35)
+sideNav.Position = UDim2.new(0, 0, 0, 35)
+sideNav.BackgroundColor3 = colors.sideBar
+sideNav.BorderSizePixel = 0
+sideNav.Parent = mainFrame
 
-    -- edges
-    parts.top = parts.top or newRect()
-    parts.bottom = parts.bottom or newRect()
-    parts.left = parts.left or newRect()
-    parts.right = parts.right or newRect()
-    parts.top.Color = color; parts.top.Filled = true
-    parts.bottom.Color = color; parts.bottom.Filled = true
-    parts.left.Color = color; parts.left.Filled = true
-    parts.right.Color = color; parts.right.Filled = true
-
-    parts.top.Position = basePos + Vector2.new(radius, 0)
-    parts.top.Size = Vector2.new(baseSize.X - radius*2, radius)
-    parts.bottom.Position = basePos + Vector2.new(radius, baseSize.Y - radius)
-    parts.bottom.Size = Vector2.new(baseSize.X - radius*2, radius)
-    parts.left.Position = basePos + Vector2.new(0, radius)
-    parts.left.Size = Vector2.new(radius, baseSize.Y - radius*2)
-    parts.right.Position = basePos + Vector2.new(baseSize.X - radius, radius)
-    parts.right.Size = Vector2.new(radius, baseSize.Y - radius*2)
-
-    -- corners
-    parts.tl = parts.tl or newCircle()
-    parts.tr = parts.tr or newCircle()
-    parts.bl = parts.bl or newCircle()
-    parts.br = parts.br or newCircle()
-    parts.tl.Radius = radius
-    parts.tr.Radius = radius
-    parts.bl.Radius = radius
-    parts.br.Radius = radius
-    parts.tl.Color = color; parts.tr.Color = color; parts.bl.Color = color; parts.br.Color = color
-
-    parts.tl.Position = basePos + Vector2.new(radius, radius)
-    parts.tr.Position = basePos + Vector2.new(baseSize.X - radius, radius)
-    parts.bl.Position = basePos + Vector2.new(radius, baseSize.Y - radius)
-    parts.br.Position = basePos + Vector2.new(baseSize.X - radius, baseSize.Y - radius)
-
-    return parts
-end
-
--- central store for drawn elements so we can update rather than recreate
-local DRAW = {
-    bg = nil, sidebar = nil, leftInner = nil, mainPanel = nil,
-    titleText = nil, titleAccent = nil,
-    icons = {},
-    tabsText = {},
-    leftBullets = {},
-    profile = nil,
-    contentPanels = {},
-    shadows = {},
+local navItems = {
+	{name = "RageBot", icon = "🎯"},
+	{name = "Anti Aim", icon = "🛡️", selected = true},
+	{name = "LegitBot", icon = "🎮"},
+	{name = "Players", icon = "👥"},
+	{name = "Weapon", icon = "🔫"},
+	{name = "Grenades", icon = "💣"},
+	{name = "Bomb", icon = "🧨"},
+	{name = "Visuals", icon = "👁️"},
+	{name = "View", icon = "📷"},
+	{name = "Main", icon = "⚙️"},
+	{name = "Inventory", icon = "🎒"},
+	{name = "Lua", icon = "📜"},
+	{name = "Config", icon = "⚙️"}
 }
 
--- positions computed from baseline proportions
-local function computeLayout()
-    local vw, vh = getViewport()
-    local scaleX, scaleY = vw / BASE_W, vh / BASE_H
-
-    -- window rectangle: center-ish like screenshot; we position at 120,40 baseline margin
-    local baseX, baseY = 60, 40
-    local baseW, baseH = 900, 540  -- roughly matching screenshot proportions (scaled)
-    local pos = Vector2.new(baseX * scaleX, baseY * scaleY)
-    local size = Vector2.new(baseW * scaleX, baseH * scaleY)
-
-    -- Sidebar width: 180 (baseline)
-    local sidebarW = 180 * scaleX
-    local sidebarPos = pos
-    local sidebarSize = Vector2.new(sidebarW, size.Y)
-
-    -- Content main area pos
-    local contentPos = Vector2.new(pos.X + sidebarW + 20 * scaleX, pos.Y + 22 * scaleY)
-    local contentSize = Vector2.new(size.X - sidebarW - 40 * scaleX, size.Y - 36 * scaleY)
-
-    -- Title positions
-    local titlePos = Vector2.new(pos.X + 12 * scaleX, pos.Y + 6 * scaleY)
-    local iconsBaseX = pos.X + size.X - 48 * scaleX
-    local iconY = pos.Y + 14 * scaleY
-
-    return {
-        windowPos = pos, windowSize = size,
-        sidebarPos = sidebarPos, sidebarSize = sidebarSize,
-        contentPos = contentPos, contentSize = contentSize,
-        titlePos = titlePos, iconsX = iconsBaseX, iconY = iconY
-    }
+for i, item in ipairs(navItems) do
+	local btn = Instance.new("TextButton")
+	btn.Name = item.name
+	btn.Size = UDim2.new(1, -10, 0, 30)
+	btn.Position = UDim2.new(0, 5, 0, (i-1) * 32 + 5)
+	btn.BackgroundColor3 = item.selected and colors.panel or Color3.fromRGB(0, 0, 0, 0)
+	btn.BackgroundTransparency = item.selected and 0 or 1
+	btn.BorderSizePixel = 0
+	btn.Text = "  " .. item.name
+	btn.TextColor3 = item.selected and colors.green or colors.text
+	btn.TextSize = 12
+	btn.Font = Enum.Font.Gotham
+	btn.TextXAlignment = Enum.TextXAlignment.Left
+	btn.Parent = sideNav
+	
+	if item.selected then
+		local indicator = Instance.new("Frame")
+		indicator.Size = UDim2.new(0, 3, 1, 0)
+		indicator.BackgroundColor3 = colors.green
+		indicator.BorderSizePixel = 0
+		indicator.Parent = btn
+	end
 end
 
--- build static shapes (create Drawing objects)
-local function buildShapes()
-    -- background shadow rectangle
-    DRAW.bg = DRAW.bg or newRect()
-    DRAW.sidebar = DRAW.sidebar or newRect()
-    DRAW.leftInner = DRAW.leftInner or newRect()
-    DRAW.mainPanel = DRAW.mainPanel or newRect()
-    DRAW.titleText = DRAW.titleText or newText()
-    DRAW.titleAccent = DRAW.titleAccent or newText()
-    DRAW.saveIcon = DRAW.saveIcon or {bg = newRect(), inner = newRect()}
-    DRAW.gearIcon = DRAW.gearIcon or {ring = newCircle(), teeth = {}}
-    DRAW.searchIcon = DRAW.searchIcon or {lens = newCircle(), handle = newLine()}
+-- Content Area
+local contentArea = Instance.new("ScrollingFrame")
+contentArea.Name = "ContentArea"
+contentArea.Size = UDim2.new(1, -130, 1, -45)
+contentArea.Position = UDim2.new(0, 125, 0, 40)
+contentArea.BackgroundColor3 = colors.background
+contentArea.BorderSizePixel = 0
+contentArea.ScrollBarThickness = 6
+contentArea.CanvasSize = UDim2.new(0, 0, 0, 800)
+contentArea.Parent = mainFrame
 
-    -- create tab texts placeholders (10)
-    for i=1,12 do
-        DRAW.tabsText[i] = DRAW.tabsText[i] or newText()
-        DRAW.leftBullets[i] = DRAW.leftBullets[i] or newCircle()
-    end
-
-    -- small profile bubble
-    DRAW.profile = DRAW.profile or {bg = newCircle(), name = newText(), time = newText()}
-
-    -- content inner panels (3 columns area with multiple rounded rects)
-    for i=1,6 do
-        DRAW.contentPanels[i] = DRAW.contentPanels[i] or {}
-        -- create parts table for rounded rect
-        DRAW.contentPanels[i].parts = DRAW.contentPanels[i].parts or {}
-    end
+-- Helper Functions
+local function createSection(parent, title, yPos)
+	local section = Instance.new("Frame")
+	section.Name = title
+	section.Size = UDim2.new(0, 250, 0, 30)
+	section.Position = UDim2.new(0, 10, 0, yPos)
+	section.BackgroundTransparency = 1
+	section.Parent = parent
+	
+	local label = Instance.new("TextLabel")
+	label.Size = UDim2.new(1, 0, 1, 0)
+	label.BackgroundTransparency = 1
+	label.Text = title
+	label.TextColor3 = colors.text
+	label.TextSize = 13
+	label.Font = Enum.Font.GothamBold
+	label.TextXAlignment = Enum.TextXAlignment.Left
+	label.Parent = section
+	
+	return yPos + 30
 end
 
--- draw icons precisely (save, gear, search)
-local function updateIcons(layout)
-    local iconsX = layout.iconsX
-    local iconY = layout.iconY
-
-    -- save icon (tiny rounded rect with small inner notch)
-    local bg = DRAW.saveIcon.bg
-    local inner = DRAW.saveIcon.inner
-    local w = sx(22); local h = sy(18)
-    bg.Position = Vector2.new(iconsX + sx(24), iconY - sy(6))
-    bg.Size = Vector2.new(w, h)
-    bg.Color = THEME.PanelAccent
-    bg.Filled = true
-
-    inner.Position = bg.Position + Vector2.new(w*0.12, h*0.18)
-    inner.Size = Vector2.new(w*0.72, h*0.54)
-    inner.Color = THEME.Sidebar
-    inner.Filled = true
-
-    -- gear icon: ring + teeth (draw using small lines around a circle)
-    local gear = DRAW.gearIcon
-    local cx = iconsX + sx(6)
-    gear.ring.Position = Vector2.new(cx, iconY)
-    gear.ring.Radius = math.min(sy(6), sx(6))
-    gear.ring.Color = THEME.PanelAccent
-    gear.ring.Filled = false
-    gear.ring.Thickness = 2
-
-    -- create 6 small teeth lines radiating
-    while #gear.teeth < 6 do
-        table.insert(gear.teeth, newLine())
-    end
-    local teethCount = 6
-    for i=1,teethCount do
-        local angle = (i-1) * (2*math.pi/teethCount)
-        local outer = Vector2.new(cx + math.cos(angle) * gear.ring.Radius*1.6, iconY + math.sin(angle) * gear.ring.Radius*1.6)
-        local inner = Vector2.new(cx + math.cos(angle) * gear.ring.Radius*0.9, iconY + math.sin(angle) * gear.ring.Radius*0.9)
-        local ln = gear.teeth[i]
-        ln.From = inner
-        ln.To = outer
-        ln.Color = THEME.PanelAccent
-        ln.Thickness = 2
-    end
-
-    -- search icon: lens + handle
-    local lens = DRAW.searchIcon.lens
-    local hline = DRAW.searchIcon.handle
-    local lx = iconsX + sx(46)
-    lens.Position = Vector2.new(lx, iconY)
-    lens.Radius = math.min(sy(6), sx(6))
-    lens.Color = THEME.PanelAccent
-    lens.Filled = false
-    lens.Thickness = 2
-
-    local handleStart = Vector2.new(lx + lens.Radius*0.7, iconY + lens.Radius*0.7)
-    local handleEnd = Vector2.new(handleStart.X + sx(8), handleStart.Y + sy(8))
-    hline.From = handleStart
-    hline.To = handleEnd
-    hline.Color = THEME.PanelAccent
-    hline.Thickness = 2
+local function createToggle(parent, name, enabled, xPos, yPos)
+	local toggle = Instance.new("Frame")
+	toggle.Name = name
+	toggle.Size = UDim2.new(0, 240, 0, 25)
+	toggle.Position = UDim2.new(0, xPos, 0, yPos)
+	toggle.BackgroundTransparency = 1
+	toggle.Parent = parent
+	
+	local label = Instance.new("TextLabel")
+	label.Size = UDim2.new(0, 160, 1, 0)
+	label.BackgroundTransparency = 1
+	label.Text = name
+	label.TextColor3 = colors.textDim
+	label.TextSize = 11
+	label.Font = Enum.Font.Gotham
+	label.TextXAlignment = Enum.TextXAlignment.Left
+	label.Parent = toggle
+	
+	local btn = Instance.new("TextButton")
+	btn.Size = UDim2.new(0, 35, 0, 18)
+	btn.Position = UDim2.new(1, -35, 0.5, -9)
+	btn.BackgroundColor3 = enabled and colors.green or colors.panel
+	btn.BorderSizePixel = 0
+	btn.Text = ""
+	btn.Parent = toggle
+	
+	local corner = Instance.new("UICorner")
+	corner.CornerRadius = UDim.new(0, 4)
+	corner.Parent = btn
+	
+	local indicator = Instance.new("Frame")
+	indicator.Size = UDim2.new(0, 14, 0, 14)
+	indicator.Position = enabled and UDim2.new(1, -16, 0.5, -7) or UDim2.new(0, 2, 0.5, -7)
+	indicator.BackgroundColor3 = Color3.fromRGB(255, 255, 255)
+	indicator.BorderSizePixel = 0
+	indicator.Parent = btn
+	
+	local indCorner = Instance.new("UICorner")
+	indCorner.CornerRadius = UDim.new(0, 3)
+	indCorner.Parent = indicator
+	
+	btn.MouseButton1Click:Connect(function()
+		enabled = not enabled
+		btn.BackgroundColor3 = enabled and colors.green or colors.panel
+		indicator:TweenPosition(
+			enabled and UDim2.new(1, -16, 0.5, -7) or UDim2.new(0, 2, 0.5, -7),
+			Enum.EasingDirection.Out,
+			Enum.EasingStyle.Quad,
+			0.2,
+			true
+		)
+	end)
+	
+	return yPos + 28
 end
 
--- top-left title: "GAMESENSE" with "SENSE" in accent color
-local function updateTitle(layout)
-    local t = DRAW.titleText
-    local a = DRAW.titleAccent
-    local pos = layout.titlePos
-    t.Position = pos
-    t.Color = THEME.Text
-    t.Size = math.floor(sy(22))
-    t.Font = 3
-    t.Text = "GAMES"
-    t.Outline = true
-    t.OutlineColor = Color3.new(0,0,0)
-
-    a.Position = Vector2.new(pos.X + sx(58), pos.Y) -- offset to draw "SENSE" after "GAMES"
-    a.Color = THEME.Accent
-    a.Size = math.floor(sy(22))
-    a.Font = 3
-    a.Text = "ENSE"
-    a.Outline = true
-    a.OutlineColor = Color3.new(0,0,0)
+local function createDropdown(parent, name, value, xPos, yPos)
+	local dropdown = Instance.new("Frame")
+	dropdown.Name = name
+	dropdown.Size = UDim2.new(0, 240, 0, 25)
+	dropdown.Position = UDim2.new(0, xPos, 0, yPos)
+	dropdown.BackgroundTransparency = 1
+	dropdown.Parent = parent
+	
+	local label = Instance.new("TextLabel")
+	label.Size = UDim2.new(0, 100, 1, 0)
+	label.BackgroundTransparency = 1
+	label.Text = name
+	label.TextColor3 = colors.textDim
+	label.TextSize = 11
+	label.Font = Enum.Font.Gotham
+	label.TextXAlignment = Enum.TextXAlignment.Left
+	label.Parent = dropdown
+	
+	local btn = Instance.new("TextButton")
+	btn.Size = UDim2.new(0, 130, 0, 20)
+	btn.Position = UDim2.new(1, -130, 0.5, -10)
+	btn.BackgroundColor3 = colors.panel
+	btn.BorderSizePixel = 0
+	btn.Text = value .. " ▼"
+	btn.TextColor3 = colors.text
+	btn.TextSize = 10
+	btn.Font = Enum.Font.Gotham
+	btn.Parent = dropdown
+	
+	local corner = Instance.new("UICorner")
+	corner.CornerRadius = UDim.new(0, 3)
+	corner.Parent = btn
+	
+	return yPos + 28
 end
 
--- draw left sidebar items ("Lorem Ipsum" placeholders + bullet icons)
-local function updateSidebar(layout)
-    local sPos, sSize = layout.sidebarPos, layout.sidebarSize
-    DRAW.sidebar.Position = sPos
-    DRAW.sidebar.Size = sSize
-    DRAW.sidebar.Color = THEME.Sidebar
-    DRAW.sidebar.Filled = true
-
-    -- left inner subtle gradient panel
-    DRAW.leftInner.Position = sPos + Vector2.new(sx(8), sy(8))
-    DRAW.leftInner.Size = Vector2.new(sSize.X - sx(16), sSize.Y - sy(16))
-    DRAW.leftInner.Color = THEME.SidebarAccent
-    DRAW.leftInner.Filled = true
-
-    -- populate 10 placeholder labels
-    local startY = sPos.Y + sy(80)
-    local spacing = sy(36)
-    for i=1,10 do
-        local txt = DRAW.tabsText[i]
-        txt.Text = "Lorem Ipsum"
-        txt.Font = 3
-        txt.Size = math.floor(sy(16))
-        txt.Color = (i==2) and THEME.Accent or THEME.Text -- highlight second item like screenshot
-        txt.Position = Vector2.new(sPos.X + sx(36), startY + (i-1)*spacing)
-
-        -- left bullet icon (small green/or white)
-        local bullet = DRAW.leftBullets[i]
-        bullet.Position = Vector2.new(sPos.X + sx(18), startY + (i-1)*spacing + sy(6))
-        bullet.Radius = math.max(4, math.floor(sy(4)))
-        bullet.Color = (i==2) and THEME.Accent or THEME.Muted
-        bullet.Filled = true
-    end
-
-    -- bottom profile bubble (avatar)
-    local pb = DRAW.profile
-    local avatarCenter = Vector2.new(sPos.X + sx(40), sPos.Y + sSize.Y - sy(60))
-    pb.bg.Position = avatarCenter
-    pb.bg.Radius = math.max(18, math.floor(sy(18)))
-    pb.bg.Color = THEME.PanelAccent
-    pb.bg.Filled = true
-
-    pb.name.Text = "Amiqa"
-    pb.name.Position = Vector2.new(avatarCenter.X + sx(42), avatarCenter.Y - sy(6))
-    pb.name.Size = math.floor(sy(13))
-    pb.name.Color = THEME.Text
-    pb.time.Text = "TT: 27 08 24:00"
-    pb.time.Position = Vector2.new(avatarCenter.X + sx(42), avatarCenter.Y + sy(8))
-    pb.time.Size = math.floor(sy(11))
-    pb.time.Color = THEME.Muted
+local function createSlider(parent, name, value, xPos, yPos)
+	local slider = Instance.new("Frame")
+	slider.Name = name
+	slider.Size = UDim2.new(0, 240, 0, 35)
+	slider.Position = UDim2.new(0, xPos, 0, yPos)
+	slider.BackgroundTransparency = 1
+	slider.Parent = parent
+	
+	local label = Instance.new("TextLabel")
+	label.Size = UDim2.new(0, 160, 0, 15)
+	label.BackgroundTransparency = 1
+	label.Text = name
+	label.TextColor3 = colors.textDim
+	label.TextSize = 11
+	label.Font = Enum.Font.Gotham
+	label.TextXAlignment = Enum.TextXAlignment.Left
+	label.Parent = slider
+	
+	local track = Instance.new("Frame")
+	track.Size = UDim2.new(1, 0, 0, 4)
+	track.Position = UDim2.new(0, 0, 0, 20)
+	track.BackgroundColor3 = colors.panel
+	track.BorderSizePixel = 0
+	track.Parent = slider
+	
+	local fill = Instance.new("Frame")
+	fill.Size = UDim2.new(0.6, 0, 1, 0)
+	fill.BackgroundColor3 = colors.green
+	fill.BorderSizePixel = 0
+	fill.Parent = track
+	
+	local handle = Instance.new("Frame")
+	handle.Size = UDim2.new(0, 10, 0, 10)
+	handle.Position = UDim2.new(0.6, -5, 0.5, -5)
+	handle.BackgroundColor3 = Color3.fromRGB(255, 255, 255)
+	handle.BorderSizePixel = 0
+	handle.Parent = track
+	
+	local handleCorner = Instance.new("UICorner")
+	handleCorner.CornerRadius = UDim.new(1, 0)
+	handleCorner.Parent = handle
+	
+	return yPos + 38
 end
 
--- content main area panels (visual only)
-local function updateContent(layout)
-    local cPos, cSize = layout.contentPos, layout.contentSize
-    DRAW.mainPanel.Position = cPos - Vector2.new(sx(6), sy(6))
-    DRAW.mainPanel.Size = cSize + Vector2.new(sx(12), sy(12))
-    DRAW.mainPanel.Color = THEME.Panel
-    DRAW.mainPanel.Filled = true
+-- Build Anti-Aim Content
+local yOffset = 10
 
-    -- draw several inner rounded panels (mimic left and right columns from screenshot)
-    -- For visual parity we'll create three large columns / modules
-    local colW = (cSize.X - sx(24)) / 2
-    local leftColX = cPos.X
-    local rightColX = cPos.X + colW + sx(24)
-    local topY = cPos.Y
+-- Anti-aimbot angles section
+yOffset = createSection(contentArea, "Anti-aimbot angles", yOffset)
+yOffset = createToggle(contentArea, "Enabled", true, 10, yOffset)
+yOffset = createDropdown(contentArea, "Yaw base", "Local view", 10, yOffset)
+yOffset = createSlider(contentArea, "Yaw", 0, 10, yOffset)
+yOffset = createSlider(contentArea, "Yaw jitter", 0, 10, yOffset)
+yOffset = createDropdown(contentArea, "Body yaw", "Off", 10, yOffset)
+yOffset = createToggle(contentArea, "Freestanding body yaw", false, 10, yOffset)
+yOffset = createToggle(contentArea, "Edge yaw", false, 10, yOffset)
+yOffset = createDropdown(contentArea, "Freestanding", "", 10, yOffset)
 
-    local panels = {
-        {x = leftColX, y = topY, w = colW, h = sy(280)},
-        {x = rightColX, y = topY, w = colW, h = sy(280)},
-        {x = leftColX, y = topY + sy(300), w = colW*2 + sx(24), h = sy(160)}
-    }
+yOffset = yOffset + 15
 
-    for i,p in ipairs(panels) do
-        local basePos = Vector2.new(p.x, p.y)
-        local baseSize = Vector2.new(p.w, p.h)
-        local parts = DRAW.contentPanels[i].parts
-        parts = drawRounded(basePos, baseSize, math.max(8, math.floor(sy(8))), THEME.PanelAccent, parts)
-        DRAW.contentPanels[i].parts = parts
+-- Fake lag section
+local fakeLagY = 10
+yOffset = createSection(contentArea, "Fake lag", fakeLagY)
+fakeLagY = createToggle(contentArea, "Enabled", true, 270, fakeLagY)
+fakeLagY = createDropdown(contentArea, "Amount", "Dynamic", 270, fakeLagY)
+fakeLagY = createSlider(contentArea, "Variance", 0, 270, fakeLagY)
+fakeLagY = createSlider(contentArea, "Limit", 0, 270, fakeLagY)
 
-        -- subtle inner highlight stripe
-        parts.top.Highlight = parts.top.Highlight or newRect()
-        parts.top.Highlight.Position = parts.center.Position + Vector2.new(0, -sy(6))
-        parts.top.Highlight.Size = Vector2.new(parts.center.Size.X, sy(6))
-        parts.top.Highlight.Color = Color3.fromRGB(20,20,20)
-        parts.top.Highlight.Filled = true
-        parts.top.Highlight.Transparency = 0.6
+-- Other section
+local otherY = fakeLagY + 15
+yOffset = createSection(contentArea, "Other", otherY)
+otherY = createToggle(contentArea, "Slow motion", false, 270, otherY)
+otherY = createDropdown(contentArea, "Slow motion type", "Stand high speed", 270, otherY)
+otherY = createDropdown(contentArea, "Leg movement", "Off", 270, otherY)
+otherY = createToggle(contentArea, "On shot anti-aim", false, 270, otherY)
+otherY = createToggle(contentArea, "Fake peek", false, 270, otherY)
 
-        -- section title
-        parts.title = parts.title or newText()
-        parts.title.Text = (i==1 and "Anti-aimbot angles") or (i==2 and "Fake lag") or "Other"
-        parts.title.Font = 3
-        parts.title.Size = math.floor(sy(14))
-        parts.title.Color = THEME.Text
-        parts.title.Position = parts.center.Position + Vector2.new(sx(10), sy(-8))
-    end
-end
+-- Make draggable
+local dragging = false
+local dragInput, mousePos, framePos
 
--- full update pass
-local function updateAll()
-    local layout = computeLayout()
-    buildShapes()
-    updateTitle(layout)
-    updateIcons(layout)
-    updateSidebar(layout)
-    updateContent(layout)
-
-    -- ensure visibility
-    for k,v in pairs(DRAW) do
-        if type(v) == "table" then
-            for kk,vv in pairs(v) do
-                if vv and vv.Visible ~= nil then vv.Visible = true end
-            end
-        elseif v and v.Visible ~= nil then
-            v.Visible = true
-        end
-    end
-end
-
--- watch for viewport changes and update once initially
-local lastW, lastH = getViewport()
-updateAll()
-RunService.RenderStepped:Connect(function()
-    local w,h = getViewport()
-    if w ~= lastW or h ~= lastH then
-        lastW, lastH = w,h
-        updateAll()
-    end
+topBar.InputBegan:Connect(function(input)
+	if input.UserInputType == Enum.UserInputType.MouseButton1 then
+		dragging = true
+		mousePos = input.Position
+		framePos = mainFrame.Position
+	end
 end)
 
--- end of file
+topBar.InputEnded:Connect(function(input)
+	if input.UserInputType == Enum.UserInputType.MouseButton1 then
+		dragging = false
+	end
+end)
+
+UserInputService.InputChanged:Connect(function(input)
+	if dragging and input.UserInputType == Enum.UserInputType.MouseMovement then
+		local delta = input.Position - mousePos
+		mainFrame.Position = UDim2.new(
+			framePos.X.Scale,
+			framePos.X.Offset + delta.X,
+			framePos.Y.Scale,
+			framePos.Y.Offset + delta.Y
+		)
+	end
+end)
+
+print("GameSense UI Loaded")
