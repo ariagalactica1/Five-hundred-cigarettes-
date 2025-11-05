@@ -1,15 +1,22 @@
 -- LocalScript (place in StarterPlayerScripts or StarterGui)
--- "GAMESENSE" UI builder (client-side)
+-- Smaller responsive GameSense UI with working tabs (Aimbot, Visuals, Misc)
 
 local Players = game:GetService("Players")
 local RunService = game:GetService("RunService")
 local player = Players.LocalPlayer
 local playerGui = player:WaitForChild("PlayerGui")
 
--- Helper: Color3 from hex (Roblox has Color3.fromHex in newer builds; fallback provided)
+-- -------- CONFIG (tweak these values) --------
+local SIDEBAR_WIDTH = 200         -- px
+local CARD_WIDTH = 300            -- px (each card width)
+local CARD_HEIGHT = 260           -- px (card height)
+local PAGE_PADDING = 16           -- spacing inside pages
+-- ---------------------------------------------
+
+-- color helper
 local function colorFromHex(hex)
     hex = hex:gsub("#","")
-    if #hex == 3 then -- e.g. "fff" -> "ffffff"
+    if #hex == 3 then
         hex = hex:sub(1,1)..hex:sub(1,1)..hex:sub(2,2)..hex:sub(2,2)..hex:sub(3,3)..hex:sub(3,3)
     end
     local r = tonumber("0x"..hex:sub(1,2)) or 0
@@ -18,7 +25,6 @@ local function colorFromHex(hex)
     return Color3.fromRGB(r,g,b)
 end
 
--- Color palette (from your CSS)
 local C = {
     bgMain = colorFromHex("#101110"),
     bgSidebar = colorFromHex("#1c1d1c"),
@@ -33,7 +39,7 @@ local C = {
     footerBorder = colorFromHex("#2a2a2a"),
 }
 
--- Remove any old GUI instance (for convenient testing)
+-- remove old GUI if exists
 local existing = playerGui:FindFirstChild("GameSenseUI")
 if existing then existing:Destroy() end
 
@@ -43,314 +49,259 @@ screenGui.ResetOnSpawn = false
 screenGui.Parent = playerGui
 screenGui.DisplayOrder = 10
 
--- Root frames
+-- ---------- SIDEBAR ----------
 local sidebar = Instance.new("Frame")
 sidebar.Name = "Sidebar"
 sidebar.Parent = screenGui
 sidebar.AnchorPoint = Vector2.new(0,0)
 sidebar.Position = UDim2.new(0,0,0,0)
-sidebar.Size = UDim2.new(0,240,1,0)
+sidebar.Size = UDim2.new(0, SIDEBAR_WIDTH, 1, 0)
 sidebar.BackgroundColor3 = C.bgSidebar
 sidebar.BorderSizePixel = 0
 
+local sidebarPadding = Instance.new("UIPadding")
+sidebarPadding.PaddingLeft = UDim.new(0, 12)
+sidebarPadding.PaddingTop = UDim.new(0, 12)
+sidebarPadding.Parent = sidebar
+
+local sideLayout = Instance.new("UIListLayout")
+sideLayout.Parent = sidebar
+sideLayout.SortOrder = Enum.SortOrder.LayoutOrder
+sideLayout.Padding = UDim.new(0,8)
+
+-- Header
+local header = Instance.new("TextLabel")
+header.Name = "Header"
+header.Parent = sidebar
+header.BackgroundTransparency = 1
+header.Size = UDim2.new(1, -24, 0, 44)
+header.LayoutOrder = 1
+header.Text = "GAMESENSE"
+header.Font = Enum.Font.GothamBold
+header.TextSize = 18
+header.TextColor3 = C.textWhite
+header.TextXAlignment = Enum.TextXAlignment.Left
+header.TextYAlignment = Enum.TextYAlignment.Center
+
+-- Small helper to create category labels
+local function createCategory(text)
+    local cat = Instance.new("TextLabel")
+    cat.Parent = sidebar
+    cat.BackgroundTransparency = 1
+    cat.Size = UDim2.new(1, -24, 0, 20)
+    cat.Text = text:upper()
+    cat.Font = Enum.Font.Gotham
+    cat.TextSize = 10
+    cat.TextColor3 = C.textMuted
+    cat.TextXAlignment = Enum.TextXAlignment.Left
+    cat.LayoutOrder = 10
+    return cat
+end
+
+-- container for nav items
+local navContainer = Instance.new("Frame")
+navContainer.Parent = sidebar
+navContainer.BackgroundTransparency = 1
+navContainer.Size = UDim2.new(1, -24, 0, 1) -- height automatic via UIListLayout
+navContainer.LayoutOrder = 11
+
+local navList = Instance.new("UIListLayout")
+navList.Parent = navContainer
+navList.SortOrder = Enum.SortOrder.LayoutOrder
+navList.Padding = UDim.new(0,6)
+
+-- store references
+local pages = {}
+local navButtons = {}
+
+-- function to set active tab
+local function setActiveTab(name)
+    for k,btn in pairs(navButtons) do
+        local indicator = btn:FindFirstChild("Indicator")
+        local label = btn:FindFirstChild("Label")
+        local icon = btn:FindFirstChild("Icon")
+        if indicator then indicator.Visible = (k == name) end
+        if label then label.TextColor3 = (k == name) and C.textWhite or C.textLight end
+        if icon then icon.TextColor3 = (k == name) and C.textWhite or C.accentGreen end
+    end
+    for k,page in pairs(pages) do
+        page.Visible = (k == name)
+    end
+end
+
+local function createNavLink(text, pageName, active)
+    local container = Instance.new("Frame")
+    container.Name = "NavItem_"..pageName
+    container.Parent = navContainer
+    container.BackgroundTransparency = 1
+    container.Size = UDim2.new(1,0,0,34)
+
+    local btn = Instance.new("TextButton")
+    btn.Parent = container
+    btn.Size = UDim2.new(1,0,1,0)
+    btn.Position = UDim2.new(0,0,0,0)
+    btn.BackgroundTransparency = 1
+    btn.Text = ""
+    btn.AutoButtonColor = true
+
+    local indicator = Instance.new("Frame")
+    indicator.Name = "Indicator"
+    indicator.Parent = btn
+    indicator.Size = UDim2.new(0, 3, 0, 20)
+    indicator.Position = UDim2.new(0, 0, 0.5, -10)
+    indicator.BackgroundColor3 = active and C.accentGreen or Color3.new(0,0,0)
+    indicator.Visible = active
+
+    local icon = Instance.new("TextLabel")
+    icon.Name = "Icon"
+    icon.Parent = btn
+    icon.Size = UDim2.new(0,24,1,0)
+    icon.Position = UDim2.new(0,8,0,0)
+    icon.BackgroundTransparency = 1
+    icon.Font = Enum.Font.Gotham
+    icon.Text = "◉" -- placeholder (replace with ImageLabel if you want)
+    icon.TextSize = 14
+    icon.TextColor3 = active and C.textWhite or C.accentGreen
+    icon.TextXAlignment = Enum.TextXAlignment.Center
+
+    local label = Instance.new("TextLabel")
+    label.Name = "Label"
+    label.Parent = btn
+    label.Size = UDim2.new(1, -36, 1, 0)
+    label.Position = UDim2.new(0,40,0,0)
+    label.BackgroundTransparency = 1
+    label.Font = Enum.Font.GothamSemibold
+    label.Text = text
+    label.TextSize = 14
+    label.TextXAlignment = Enum.TextXAlignment.Left
+    label.TextColor3 = active and C.textWhite or C.textLight
+
+    btn.MouseButton1Click:Connect(function()
+        setActiveTab(pageName)
+    end)
+
+    navButtons[pageName] = btn
+    return btn
+end
+
+-- create categories and links (matching your HTML structure)
+createCategory("Aimbot")
+createNavLink("RageBot", "Aimbot_Rage", false)
+createNavLink("Anti Aim", "Aimbot_AA", true) -- default active
+createNavLink("Legitbot", "Aimbot_Legit", false)
+
+createCategory("Visuals")
+createNavLink("Players", "Visuals_Players", false)
+createNavLink("Weapon", "Visuals_Weapon", false)
+createNavLink("Grenades", "Visuals_Grenades", false)
+createNavLink("Bomb", "Visuals_Bomb", false)
+createNavLink("World", "Visuals_World", false)
+createNavLink("View", "Visuals_View", false)
+
+createCategory("Miscellaneous")
+createNavLink("Main", "Misc_Main", false)
+createNavLink("Inventory", "Misc_Inventory", false)
+createNavLink("Lua", "Misc_Lua", false)
+createNavLink("Configs", "Misc_Configs", false)
+
+-- Footer (profile)
+local footer = Instance.new("Frame")
+footer.Parent = sidebar
+footer.BackgroundTransparency = 1
+footer.Size = UDim2.new(1, -24, 0, 64)
+footer.LayoutOrder = 999
+
+local line = Instance.new("Frame")
+line.Parent = footer
+line.Size = UDim2.new(1, 0, 0, 1)
+line.Position = UDim2.new(0, 0, 0, 0)
+line.BackgroundColor3 = C.footerBorder
+line.BorderSizePixel = 0
+
+local avatar = Instance.new("ImageLabel")
+avatar.Parent = footer
+avatar.Size = UDim2.new(0,40,0,40)
+avatar.Position = UDim2.new(0,8,0,8)
+avatar.BackgroundTransparency = 0
+avatar.BorderSizePixel = 0
+avatar.Image = "rbxthumb://type=AvatarHeadShot&id="..tostring(player.UserId).."&w=48&h=48"
+local avCorner = Instance.new("UICorner", avatar)
+avCorner.CornerRadius = UDim.new(1,0)
+
+local nameLabel = Instance.new("TextLabel")
+nameLabel.Parent = footer
+nameLabel.Size = UDim2.new(1, -56, 0, 18)
+nameLabel.Position = UDim2.new(0,56,0,12)
+nameLabel.BackgroundTransparency = 1
+nameLabel.Font = Enum.Font.GothamSemibold
+nameLabel.Text = player.Name
+nameLabel.TextSize = 13
+nameLabel.TextXAlignment = Enum.TextXAlignment.Left
+nameLabel.TextColor3 = C.textWhite
+
+local statusLabel = Instance.new("TextLabel")
+statusLabel.Parent = footer
+statusLabel.Size = UDim2.new(1, -56, 0, 14)
+statusLabel.Position = UDim2.new(0,56,0,30)
+statusLabel.BackgroundTransparency = 1
+statusLabel.Font = Enum.Font.Gotham
+statusLabel.Text = "TIE: 27.08 24:00"
+statusLabel.TextSize = 12
+statusLabel.TextXAlignment = Enum.TextXAlignment.Left
+statusLabel.TextColor3 = C.textMuted
+
+-- ---------- MAIN CONTENT (responsive) ----------
 local mainContent = Instance.new("Frame")
 mainContent.Name = "MainContent"
 mainContent.Parent = screenGui
 mainContent.AnchorPoint = Vector2.new(0,0)
-mainContent.Position = UDim2.new(0,240,0,0)
-mainContent.Size = UDim2.new(1,-240,1,0)
+mainContent.Position = UDim2.new(0, SIDEBAR_WIDTH, 0, 0)
+mainContent.Size = UDim2.new(1, -SIDEBAR_WIDTH, 1, 0)
 mainContent.BackgroundColor3 = C.bgMain
 mainContent.BorderSizePixel = 0
 
--- Sidebar layout
-local sidebarContainer = Instance.new("Frame")
-sidebarContainer.Name = "SidebarContainer"
-sidebarContainer.Parent = sidebar
-sidebarContainer.AnchorPoint = Vector2.new(0,0)
-sidebarContainer.Position = UDim2.new(0,0,0,0)
-sidebarContainer.Size = UDim2.new(1,0,1,0)
-sidebarContainer.BackgroundTransparency = 1
-
-local sidebarList = Instance.new("UIListLayout")
-sidebarList.Parent = sidebarContainer
-sidebarList.SortOrder = Enum.SortOrder.LayoutOrder
-sidebarList.Padding = UDim.new(0, 8)
-sidebarList.HorizontalAlignment = Enum.HorizontalAlignment.Left
-
 -- Header
-local header = Instance.new("TextLabel")
-header.Name = "SidebarHeader"
-header.Parent = sidebarContainer
-header.BackgroundTransparency = 1
-header.Size = UDim2.new(1,0,0,64)
-header.LayoutOrder = 1
-header.Text = "GAMESENSE"
-header.Font = Enum.Font.GothamBold
-header.TextSize = 24
-header.TextColor3 = C.textWhite
-header.TextXAlignment = Enum.TextXAlignment.Left
-header.TextYAlignment = Enum.TextYAlignment.Center
-header.Padding = UDim.new(0,24) -- not a real property, simulate via position
-header.Position = UDim2.new(0,0,0,0)
-header.TextStrokeTransparency = 1
--- Use padding hack: put an invisible frame to create left padding for subsequent elements
-local headerPad = Instance.new("Frame")
-headerPad.Parent = sidebarContainer
-headerPad.BackgroundTransparency = 1
-headerPad.Size = UDim2.new(1,0,0,0)
-headerPad.LayoutOrder = 2
-
--- Helper to create category labels
-local function createCategory(text)
-    local cat = Instance.new("TextLabel")
-    cat.Name = "NavCategory"
-    cat.Parent = sidebarContainer
-    cat.BackgroundTransparency = 1
-    cat.Size = UDim2.new(1,0,0,28)
-    cat.LayoutOrder = sidebarList:GetChildren() and #sidebarList:GetChildren() + 1 or 0
-    cat.Text = text:upper()
-    cat.Font = Enum.Font.Gotham
-    cat.TextSize = 11
-    cat.TextColor3 = C.textMuted
-    cat.TextXAlignment = Enum.TextXAlignment.Left
-    cat.TextYAlignment = Enum.TextYAlignment.Center
-    cat.TextScaled = false
-    cat.Padding = UDim.new(0,24)
-    return cat
-end
-
--- Custom nav link builder
-local navLinksFolder = Instance.new("Frame")
-navLinksFolder.Parent = sidebarContainer
-navLinksFolder.BackgroundTransparency = 1
-navLinksFolder.Size = UDim2.new(1,0,0,0)
-navLinksFolder.LayoutOrder = 10
-
-local navListLayout = Instance.new("UIListLayout")
-navListLayout.Parent = navLinksFolder
-navListLayout.SortOrder = Enum.SortOrder.LayoutOrder
-navListLayout.Padding = UDim.new(0,4)
-
-local function createNavLink(text, isActive)
-    local container = Instance.new("Frame")
-    container.Name = "NavItem"
-    container.Parent = navLinksFolder
-    container.BackgroundTransparency = 1
-    container.Size = UDim2.new(1,-20,0,40)
-    container.LayoutOrder = 1
-
-    local btn = Instance.new("TextButton")
-    btn.Name = "NavButton"
-    btn.Parent = container
-    btn.AnchorPoint = Vector2.new(0,0)
-    btn.Position = UDim2.new(0,10,0,0)
-    btn.Size = UDim2.new(1,-10,1,0)
-    btn.BackgroundColor3 = isActive and C.bgActiveNav or Color3.new(0,0,0)
-    btn.BackgroundTransparency = isActive and 0 or 1
-    btn.BorderSizePixel = 0
-    btn.AutoButtonColor = true
-    btn.Text = ""
-    btn.LayoutOrder = 1
-
-    -- Left indicator (active)
-    local indicator = Instance.new("Frame")
-    indicator.Name = "ActiveIndicator"
-    indicator.Parent = btn
-    indicator.Size = UDim2.new(0,3,0,20)
-    indicator.Position = UDim2.new(0,0,0.5,-10)
-    indicator.BackgroundColor3 = isActive and C.accentGreen or Color3.new(0,0,0)
-    indicator.Visible = isActive
-
-    -- Icon placeholder (use a small TextLabel that you can replace with ImageLabel)
-    local icon = Instance.new("TextLabel")
-    icon.Name = "NavIcon"
-    icon.Parent = btn
-    icon.Position = UDim2.new(0,8,0,0)
-    icon.Size = UDim2.new(0,24,1,0)
-    icon.BackgroundTransparency = 1
-    icon.Text = "◉" -- placeholder icon; replace with ImageLabel using asset
-    icon.Font = Enum.Font.Gotham
-    icon.TextSize = 16
-    icon.TextColor3 = isActive and C.textWhite or C.accentGreen
-    icon.TextXAlignment = Enum.TextXAlignment.Center
-    icon.TextYAlignment = Enum.TextYAlignment.Center
-
-    local label = Instance.new("TextLabel")
-    label.Name = "NavLabel"
-    label.Parent = btn
-    label.Position = UDim2.new(0,44,0,0)
-    label.Size = UDim2.new(1,-44,1,0)
-    label.BackgroundTransparency = 1
-    label.Text = text
-    label.Font = Enum.Font.GothamSemibold
-    label.TextSize = 14
-    label.TextColor3 = isActive and C.textWhite or C.textLight
-    label.TextXAlignment = Enum.TextXAlignment.Left
-    label.TextYAlignment = Enum.TextYAlignment.Center
-
-    -- Hover effect
-    btn.MouseEnter:Connect(function()
-        if not indicator.Visible then
-            btn.BackgroundTransparency = 0
-            btn.BackgroundColor3 = C.bgActiveNav
-        end
-    end)
-    btn.MouseLeave:Connect(function()
-        if not indicator.Visible then
-            btn.BackgroundTransparency = 1
-        end
-    end)
-
-    -- Clicking sets active state
-    btn.MouseButton1Click:Connect(function()
-        -- clear all siblings
-        for _,v in pairs(navLinksFolder:GetChildren()) do
-            local b = v:FindFirstChild("NavButton")
-            if b then
-                local ind = b:FindFirstChild("ActiveIndicator")
-                if ind then ind.Visible = false end
-                b.BackgroundTransparency = 1
-                local navLabel = b:FindFirstChild("NavLabel")
-                local navIcon = b:FindFirstChild("NavIcon")
-                if navLabel then navLabel.TextColor3 = C.textLight end
-                if navIcon then navIcon.TextColor3 = C.accentGreen end
-            end
-        end
-        -- set this active
-        local ind = btn:FindFirstChild("ActiveIndicator")
-        if ind then ind.Visible = true end
-        btn.BackgroundTransparency = 0
-        btn.BackgroundColor3 = C.bgActiveNav
-        label.TextColor3 = C.textWhite
-        icon.TextColor3 = C.textWhite
-    end)
-
-    return container
-end
-
--- Build nav sections (copying your HTML)
-createCategory("Aimbot")
-createNavLink("RageBot", false)
-createNavLink("Anti Aim", true)
-createNavLink("Legitbot", false)
-
-createCategory("Visuals")
-createNavLink("Players", false)
-createNavLink("Weapon", false)
-createNavLink("Grenades", false)
-createNavLink("Bomb", false)
-createNavLink("World", false)
-createNavLink("View", false)
-
-createCategory("Miscellaneous")
-createNavLink("Main", false)
-createNavLink("Inventory", false)
-createNavLink("Lua", false)
-createNavLink("Configs", false)
-
--- Footer (profile)
-local footer = Instance.new("Frame")
-footer.Name = "SidebarFooter"
-footer.Parent = sidebarContainer
-footer.BackgroundTransparency = 1
-footer.Size = UDim2.new(1,0,0,64)
-footer.LayoutOrder = 999
-footer.Position = UDim2.new(0,0,1,-80)
-
-local footerLine = Instance.new("Frame")
-footerLine.Parent = footer
-footerLine.Size = UDim2.new(1,0,0,1)
-footerLine.Position = UDim2.new(0,0,0,0)
-footerLine.BackgroundColor3 = C.footerBorder
-footerLine.BorderSizePixel = 0
-
-local profileFrame = Instance.new("Frame")
-profileFrame.Parent = footer
-profileFrame.Size = UDim2.new(1,0,1, -1)
-profileFrame.Position = UDim2.new(0,0,0,1)
-profileFrame.BackgroundTransparency = 1
-
-local avatar = Instance.new("ImageLabel")
-avatar.Parent = profileFrame
-avatar.Size = UDim2.new(0,40,0,40)
-avatar.Position = UDim2.new(0,12,0,12)
-avatar.BackgroundTransparency = 0
-avatar.Image = "rbxthumb://type=AvatarHeadShot&id="..tostring(player.UserId).."&w=48&h=48"
-avatar.BorderSizePixel = 0
-local avatarCorner = Instance.new("UICorner", avatar)
-avatarCorner.CornerRadius = UDim.new(1,0)
-
-local profileInfo = Instance.new("Frame")
-profileInfo.Parent = profileFrame
-profileInfo.BackgroundTransparency = 1
-profileInfo.Position = UDim2.new(0,64,0,12)
-profileInfo.Size = UDim2.new(1,-64,0,40)
-
-local nameLabel = Instance.new("TextLabel")
-nameLabel.Parent = profileInfo
-nameLabel.Size = UDim2.new(1,0,0,20)
-nameLabel.Position = UDim2.new(0,0,0,0)
-nameLabel.BackgroundTransparency = 1
-nameLabel.Text = player.Name
-nameLabel.Font = Enum.Font.GothamSemibold
-nameLabel.TextSize = 14
-nameLabel.TextColor3 = C.textWhite
-nameLabel.TextXAlignment = Enum.TextXAlignment.Left
-
-local statusLabel = Instance.new("TextLabel")
-statusLabel.Parent = profileInfo
-statusLabel.Size = UDim2.new(1,0,0,16)
-statusLabel.Position = UDim2.new(0,0,0,20)
-statusLabel.BackgroundTransparency = 1
-statusLabel.Text = "TIE: 27.08 24:00"
-statusLabel.Font = Enum.Font.Gotham
-statusLabel.TextSize = 12
-statusLabel.TextColor3 = C.textMuted
-statusLabel.TextXAlignment = Enum.TextXAlignment.Left
-
--- MAIN CONTENT HEADER
 local mainHeader = Instance.new("Frame")
-mainHeader.Name = "MainHeader"
 mainHeader.Parent = mainContent
-mainHeader.AnchorPoint = Vector2.new(0,0)
-mainHeader.Position = UDim2.new(0,0,0,0)
-mainHeader.Size = UDim2.new(1,0,0,56)
+mainHeader.Size = UDim2.new(1, 0, 0, 48)
+mainHeader.Position = UDim2.new(0, 0, 0, 0)
 mainHeader.BackgroundColor3 = C.headerBg
 mainHeader.BorderSizePixel = 0
 
-local saveButton = Instance.new("TextButton")
-saveButton.Parent = mainHeader
-saveButton.Size = UDim2.new(0,110,0,36)
-saveButton.Position = UDim2.new(0,16,0,10)
-saveButton.BackgroundColor3 = C.bgControl
-saveButton.BorderColor3 = C.borderColor
-saveButton.Text = "Save"
-saveButton.Font = Enum.Font.Gotham
-saveButton.TextSize = 14
-saveButton.TextColor3 = C.textLight
+local saveBtn = Instance.new("TextButton")
+saveBtn.Parent = mainHeader
+saveBtn.Position = UDim2.new(0, 12, 0, 6)
+saveBtn.Size = UDim2.new(0, 96, 0, 36)
+saveBtn.Text = "Save"
+saveBtn.Font = Enum.Font.Gotham
+saveBtn.TextSize = 14
+saveBtn.TextColor3 = C.textLight
+saveBtn.BackgroundColor3 = C.bgControl
+saveBtn.BorderColor3 = C.borderColor
 
-local headerActions = Instance.new("Frame")
-headerActions.Parent = mainHeader
-headerActions.BackgroundTransparency = 1
-headerActions.Size = UDim2.new(0,160,1,0)
-headerActions.Position = UDim2.new(1,-176,0,0)
+-- header icons placeholders
+local headerIcons = Instance.new("Frame")
+headerIcons.Parent = mainHeader
+headerIcons.Size = UDim2.new(0, 120, 1, 0)
+headerIcons.AnchorPoint = Vector2.new(1,0)
+headerIcons.Position = UDim2.new(1, -12, 0, 0)
+headerIcons.BackgroundTransparency = 1
 
-local headerLayout = Instance.new("UIListLayout")
-headerLayout.Parent = headerActions
-headerLayout.FillDirection = Enum.FillDirection.Horizontal
-headerLayout.Padding = UDim.new(0,12)
-headerLayout.HorizontalAlignment = Enum.HorizontalAlignment.Right
-headerLayout.SortOrder = Enum.SortOrder.LayoutOrder
+local iconsLayout = Instance.new("UIListLayout")
+iconsLayout.Parent = headerIcons
+iconsLayout.FillDirection = Enum.FillDirection.Horizontal
+iconsLayout.Padding = UDim.new(0, 8)
+iconsLayout.HorizontalAlignment = Enum.HorizontalAlignment.Right
 
-local function makeHeaderIcon(symbol, color)
+local function makeHeaderIcon(symbol, col)
     local lbl = Instance.new("TextLabel")
-    lbl.Parent = headerActions
+    lbl.Parent = headerIcons
+    lbl.Size = UDim2.new(0, 28, 0, 28)
     lbl.BackgroundTransparency = 1
-    lbl.Size = UDim2.new(0,24,0,24)
-    lbl.Text = symbol -- placeholder
+    lbl.Text = symbol
     lbl.Font = Enum.Font.Gotham
-    lbl.TextSize = 18
-    lbl.TextColor3 = color or C.textLight
+    lbl.TextSize = 16
+    lbl.TextColor3 = col or C.textLight
     lbl.TextXAlignment = Enum.TextXAlignment.Center
     lbl.TextYAlignment = Enum.TextYAlignment.Center
     return lbl
@@ -360,301 +311,190 @@ makeHeaderIcon("💬")
 makeHeaderIcon("⚙️", C.accentGreen)
 makeHeaderIcon("⚙️")
 
--- CONTENT BODY (scrollable)
-local contentBody = Instance.new("ScrollingFrame")
-contentBody.Parent = mainContent
-contentBody.Name = "ContentBody"
-contentBody.Position = UDim2.new(0,0,0,56)
-contentBody.Size = UDim2.new(1,0,1,-56)
-contentBody.CanvasSize = UDim2.new(0,0,0,0)
-contentBody.ScrollBarThickness = 8
-contentBody.BackgroundTransparency = 1
-contentBody.BorderSizePixel = 0
-contentBody.AutomaticCanvasSize = Enum.AutomaticSize.Y
+-- Utility: create a page (scrolling)
+local function createPage(name)
+    local page = Instance.new("ScrollingFrame")
+    page.Name = name
+    page.Parent = mainContent
+    page.Position = UDim2.new(0, 0, 0, 48)
+    page.Size = UDim2.new(1, 0, 1, -48)
+    page.CanvasSize = UDim2.new(0,0,0,0)
+    page.ScrollBarThickness = 8
+    page.BackgroundTransparency = 1
+    page.Visible = false
+    page.AutomaticCanvasSize = Enum.AutomaticSize.Y
 
-local contentLayout = Instance.new("UIGridLayout")
-contentLayout.Parent = contentBody
-contentLayout.SortOrder = Enum.SortOrder.LayoutOrder
-contentLayout.CellPadding = UDim2.new(0,24,0,24)
-contentLayout.CellSize = UDim2.new(0, 320, 0, 340)
-contentLayout.HorizontalAlignment = Enum.HorizontalAlignment.Center
+    local layout = Instance.new("UIListLayout")
+    layout.Parent = page
+    layout.Padding = UDim.new(0, PAGE_PADDING)
+    layout.SortOrder = Enum.SortOrder.LayoutOrder
 
--- Utilities: UICorner and UIStroke generator
-local function addUICorner(inst, radius)
-    local c = Instance.new("UICorner")
-    c.CornerRadius = radius or UDim.new(0,6)
-    c.Parent = inst
-    return c
-end
-local function addUIStroke(inst, color, thickness)
-    local s = Instance.new("UIStroke")
-    s.Parent = inst
-    s.Color = color or C.borderColor
-    s.Thickness = thickness or 1
-    return s
+    local pad = Instance.new("UIPadding")
+    pad.Parent = page
+    pad.PaddingTop = UDim.new(0, PAGE_PADDING)
+    pad.PaddingLeft = UDim.new(0, PAGE_PADDING)
+    pad.PaddingRight = UDim.new(0, PAGE_PADDING)
+    pad.PaddingBottom = UDim.new(0, PAGE_PADDING)
+
+    pages[name] = page
+    return page
 end
 
--- Control element factories
-local function createSettingsCard(title)
+-- create the pages
+local pageAimbotRage = createPage("Aimbot_Rage")
+local pageAimbotAA   = createPage("Aimbot_AA")
+local pageAimbotLegit= createPage("Aimbot_Legit")
+
+local pageVisualsPlayers = createPage("Visuals_Players")
+local pageVisualsWeapon  = createPage("Visuals_Weapon")
+local pageVisualsOther   = createPage("Visuals_Other")
+
+local pageMiscMain = createPage("Misc_Main")
+local pageMiscInventory = createPage("Misc_Inventory")
+local pageMiscLua = createPage("Misc_Lua")
+local pageMiscConfigs = createPage("Misc_Configs")
+
+-- build card factory (smaller cards)
+local function createCard(parent, title)
     local card = Instance.new("Frame")
-    card.Name = "SettingsCard"
-    card.Size = UDim2.new(0,320,0,340)
+    card.Parent = parent
+    card.Size = UDim2.new(0, CARD_WIDTH, 0, CARD_HEIGHT)
     card.BackgroundColor3 = C.bgControl
     card.BorderSizePixel = 0
-    addUICorner(card, UDim.new(0,8))
-    card.Parent = contentBody
+    local corner = Instance.new("UICorner", card)
+    corner.CornerRadius = UDim.new(0,8)
 
-    local inner = Instance.new("Frame")
-    inner.Parent = card
-    inner.Size = UDim2.new(1,-20,1,-20)
-    inner.Position = UDim2.new(0,10,0,10)
-    inner.BackgroundTransparency = 1
+    local innerPad = Instance.new("UIPadding", card)
+    innerPad.PaddingTop = UDim.new(0,10)
+    innerPad.PaddingLeft = UDim.new(0,12)
+    innerPad.PaddingRight = UDim.new(0,12)
 
-    local titleLabel = Instance.new("TextLabel")
-    titleLabel.Parent = inner
-    titleLabel.Size = UDim2.new(1,0,0,24)
-    titleLabel.Position = UDim2.new(0,0,0,0)
-    titleLabel.BackgroundTransparency = 1
-    titleLabel.Text = title:upper()
-    titleLabel.Font = Enum.Font.GothamBold
-    titleLabel.TextSize = 14
-    titleLabel.TextColor3 = C.textWhite
-    titleLabel.TextXAlignment = Enum.TextXAlignment.Left
+    local titleLbl = Instance.new("TextLabel")
+    titleLbl.Parent = card
+    titleLbl.Size = UDim2.new(1,0,0,20)
+    titleLbl.Position = UDim2.new(0,0,0,0)
+    titleLbl.BackgroundTransparency = 1
+    titleLbl.Font = Enum.Font.GothamBold
+    titleLbl.TextSize = 13
+    titleLbl.Text = title:upper()
+    titleLbl.TextXAlignment = Enum.TextXAlignment.Left
+    titleLbl.TextColor3 = C.textWhite
 
-    local contentFrame = Instance.new("Frame")
-    contentFrame.Parent = inner
-    contentFrame.BackgroundTransparency = 1
-    contentFrame.Size = UDim2.new(1,0,1, -28)
-    contentFrame.Position = UDim2.new(0,0,0,32)
-
-    return card, contentFrame
+    return card
 end
 
--- Toggle switch factory
-local function createToggleLine(parent, labelText, default)
+-- toggle line (compact)
+local function addToggleLine(card, labelText, default)
     local line = Instance.new("Frame")
-    line.Parent = parent
-    line.Size = UDim2.new(1,0,0,34)
+    line.Parent = card
+    line.Size = UDim2.new(1,0,0,28)
+    line.Position = UDim2.new(0,0,0,30)
     line.BackgroundTransparency = 1
 
-    local label = Instance.new("TextLabel")
-    label.Parent = line
-    label.Size = UDim2.new(0.6,0,1,0)
-    label.Position = UDim2.new(0,0,0,0)
-    label.BackgroundTransparency = 1
-    label.Text = labelText
-    label.Font = Enum.Font.Gotham
-    label.TextSize = 14
-    label.TextColor3 = C.textLight
-    label.TextXAlignment = Enum.TextXAlignment.Left
-    label.TextYAlignment = Enum.TextYAlignment.Center
+    local lbl = Instance.new("TextLabel")
+    lbl.Parent = line
+    lbl.Size = UDim2.new(0.6,0,1,0)
+    lbl.BackgroundTransparency = 1
+    lbl.Text = labelText
+    lbl.Font = Enum.Font.Gotham
+    lbl.TextSize = 13
+    lbl.TextColor3 = C.textLight
+    lbl.TextXAlignment = Enum.TextXAlignment.Left
 
-    local switch = Instance.new("TextButton")
-    switch.Parent = line
-    switch.AnchorPoint = Vector2.new(1,0)
-    switch.Size = UDim2.new(0,38,0,22)
-    switch.Position = UDim2.new(1, -2, 0.5, -11)
-    switch.Text = ""
-    switch.BackgroundColor3 = C.bgControl
-    switch.BorderColor3 = C.borderColor
-    local corner = addUICorner(switch, UDim.new(0,22))
-    addUIStroke(switch, C.borderColor, 1)
+    local btn = Instance.new("TextButton")
+    btn.Parent = line
+    btn.Size = UDim2.new(0,36,0,20)
+    btn.Position = UDim2.new(1, -40, 0, 4)
+    btn.Text = ""
+    btn.BackgroundColor3 = default and C.accentGreen or C.bgControl
+    btn.BorderColor3 = C.borderColor
+    btn.AutoButtonColor = true
+    local c = Instance.new("UICorner", btn)
+    c.CornerRadius = UDim.new(0, 16)
 
     local knob = Instance.new("Frame")
-    knob.Parent = switch
-    knob.Name = "Knob"
-    knob.Size = UDim2.new(0,16,0,16)
-    knob.Position = default and UDim2.new(0,20,0,2) or UDim2.new(0,2,0,2)
+    knob.Parent = btn
+    knob.Size = UDim2.new(0,10,0,10)
+    knob.Position = default and UDim2.new(0, 18, 0, 5) or UDim2.new(0, 6, 0, 5)
     knob.BackgroundColor3 = default and C.bgSidebar or Color3.fromRGB(136,136,136)
-    addUICorner(knob, UDim.new(1,0))
+    local kc = Instance.new("UICorner", knob)
+    kc.CornerRadius = UDim.new(1,0)
 
-    -- Toggle behaviour
-    local toggled = default or false
-    switch.MouseButton1Click:Connect(function()
+    local toggled = default and true or false
+    btn.MouseButton1Click:Connect(function()
         toggled = not toggled
         if toggled then
-            knob:TweenPosition(UDim2.new(0,20,0,2), Enum.EasingDirection.Out, Enum.EasingStyle.Quad, 0.12, true)
+            btn.BackgroundColor3 = C.accentGreen
+            knob:TweenPosition(UDim2.new(0, 18, 0, 5), Enum.EasingDirection.Out, Enum.EasingStyle.Quad, .12, true)
             knob.BackgroundColor3 = C.bgSidebar
-            switch.BackgroundColor3 = C.accentGreen
-            switch.BorderColor3 = C.accentGreen
         else
-            knob:TweenPosition(UDim2.new(0,2,0,2), Enum.EasingDirection.Out, Enum.EasingStyle.Quad, 0.12, true)
+            btn.BackgroundColor3 = C.bgControl
+            knob:TweenPosition(UDim2.new(0, 6, 0, 5), Enum.EasingDirection.Out, Enum.EasingStyle.Quad, .12, true)
             knob.BackgroundColor3 = Color3.fromRGB(136,136,136)
-            switch.BackgroundColor3 = C.bgControl
-            switch.BorderColor3 = C.borderColor
         end
     end)
-
-    return line, function() return toggled end
+    return line
 end
 
--- Dropdown factory (simple)
-local function createDropdownLine(parent, labelText, options, defaultIndex)
-    local line = Instance.new("Frame")
-    line.Parent = parent
-    line.Size = UDim2.new(1,0,0,36)
-    line.BackgroundTransparency = 1
+-- slider (compact)
+local function addSliderLine(card, labelText, min, max, initial)
+    min = min or 0; max = max or 100; initial = initial or 0
+    local yOff = (#card:GetChildren()) * 0 -- not used; we'll position using automatic layout in pages
+    local container = Instance.new("Frame")
+    container.Parent = card
+    container.Size = UDim2.new(1,0,0,56)
+    container.BackgroundTransparency = 1
 
     local label = Instance.new("TextLabel")
-    label.Parent = line
-    label.Size = UDim2.new(0.55,0,1,0)
-    label.Position = UDim2.new(0,0,0,0)
+    label.Parent = container
+    label.Size = UDim2.new(0.6,0,0,20)
     label.BackgroundTransparency = 1
     label.Text = labelText
     label.Font = Enum.Font.Gotham
-    label.TextSize = 14
+    label.TextSize = 13
     label.TextColor3 = C.textLight
     label.TextXAlignment = Enum.TextXAlignment.Left
 
-    local wrapper = Instance.new("Frame")
-    wrapper.Parent = line
-    wrapper.AnchorPoint = Vector2.new(1,0)
-    wrapper.Size = UDim2.new(0,180,1,0)
-    wrapper.Position = UDim2.new(1, -6, 0, 0)
-    wrapper.BackgroundColor3 = C.bgControl
-    wrapper.BorderColor3 = C.borderColor
-    addUICorner(wrapper, UDim.new(0,6))
-
-    local selected = Instance.new("TextButton")
-    selected.Parent = wrapper
-    selected.Size = UDim2.new(1,0,1,0)
-    selected.BackgroundTransparency = 1
-    selected.Text = options[defaultIndex] or options[1] or ""
-    selected.TextColor3 = C.textLight
-    selected.Font = Enum.Font.Gotham
-    selected.TextSize = 14
-    selected.AutoButtonColor = true
-
-    local dropdown = Instance.new("Frame")
-    dropdown.Parent = wrapper
-    dropdown.Size = UDim2.new(1,0,0,#options*28)
-    dropdown.Position = UDim2.new(0,0,1,4)
-    dropdown.BackgroundColor3 = C.bgControl
-    addUICorner(dropdown, UDim.new(0,6))
-    dropdown.Visible = false
-    dropdown.ClipsDescendants = true
-
-    local ddLayout = Instance.new("UIListLayout")
-    ddLayout.Parent = dropdown
-    ddLayout.SortOrder = Enum.SortOrder.LayoutOrder
-
-    for i,opt in ipairs(options) do
-        local btn = Instance.new("TextButton")
-        btn.Parent = dropdown
-        btn.Size = UDim2.new(1,0,0,28)
-        btn.BackgroundTransparency = 1
-        btn.Text = opt
-        btn.Font = Enum.Font.Gotham
-        btn.TextSize = 14
-        btn.TextColor3 = C.textLight
-        btn.AutoButtonColor = true
-        btn.MouseButton1Click:Connect(function()
-            selected.Text = opt
-            dropdown.Visible = false
-        end)
-    end
-
-    selected.MouseButton1Click:Connect(function()
-        dropdown.Visible = not dropdown.Visible
-    end)
-
-    return line, function() return selected.Text end
-end
-
--- Slider factory (click & drag)
-local function createSliderLine(parent, labelText, min, max, initial)
-    min = min or 0
-    max = max or 100
-    initial = initial or 0
-
-    local line = Instance.new("Frame")
-    line.Parent = parent
-    line.Size = UDim2.new(1,0,0,56)
-    line.BackgroundTransparency = 1
-
-    local labelRow = Instance.new("Frame")
-    labelRow.Parent = line
-    labelRow.Size = UDim2.new(1,0,0,20)
-    labelRow.BackgroundTransparency = 1
-
-    local label = Instance.new("TextLabel")
-    label.Parent = labelRow
-    label.Size = UDim2.new(0.6,0,1,0)
-    label.BackgroundTransparency = 1
-    label.Text = labelText
-    label.Font = Enum.Font.Gotham
-    label.TextSize = 14
-    label.TextColor3 = C.textLight
-    label.TextXAlignment = Enum.TextXAlignment.Left
-
-    local valueLabel = Instance.new("TextLabel")
-    valueLabel.Parent = labelRow
-    valueLabel.Size = UDim2.new(0.4,-4,1,0)
-    valueLabel.Position = UDim2.new(0.6,4,0,0)
-    valueLabel.BackgroundTransparency = 1
-    valueLabel.Text = tostring(initial)
-    valueLabel.Font = Enum.Font.Gotham
-    valueLabel.TextSize = 14
-    valueLabel.TextColor3 = C.textMuted
-    valueLabel.TextXAlignment = Enum.TextXAlignment.Right
-
-    local sliderContainer = Instance.new("Frame")
-    sliderContainer.Parent = line
-    sliderContainer.Size = UDim2.new(1,0,0,20)
-    sliderContainer.Position = UDim2.new(0,0,0,28)
-    sliderContainer.BackgroundTransparency = 1
+    local value = Instance.new("TextLabel")
+    value.Parent = container
+    value.Size = UDim2.new(0.3,0,0,20)
+    value.Position = UDim2.new(0.7, 0, 0, 0)
+    value.BackgroundTransparency = 1
+    value.Text = tostring(initial)
+    value.Font = Enum.Font.Gotham
+    value.TextSize = 13
+    value.TextColor3 = C.textMuted
+    value.TextXAlignment = Enum.TextXAlignment.Right
 
     local bar = Instance.new("Frame")
-    bar.Parent = sliderContainer
-    bar.Size = UDim2.new(1,-80,0,6)
-    bar.Position = UDim2.new(0,40,0,7)
+    bar.Parent = container
+    bar.Size = UDim2.new(1, -80, 0, 8)
+    bar.Position = UDim2.new(0, 40, 0, 28)
     bar.BackgroundColor3 = C.bgControl
-    addUICorner(bar, UDim.new(0,6))
+    local bcorner = Instance.new("UICorner", bar)
+    bcorner.CornerRadius = UDim.new(0, 6)
 
     local fill = Instance.new("Frame")
     fill.Parent = bar
-    fill.Size = UDim2.new(initial/(max-min),0,1,0)
+    local frac = (initial - min) / math.max(1, (max - min))
+    fill.Size = UDim2.new(frac, 0, 1, 0)
     fill.BackgroundColor3 = C.accentGreen
-    addUICorner(fill, UDim.new(0,6))
+    local fcorner = Instance.new("UICorner", fill)
+    fcorner.CornerRadius = UDim.new(0, 6)
 
     local thumb = Instance.new("ImageButton")
-    thumb.Parent = sliderContainer
-    thumb.Size = UDim2.new(0,16,0,16)
-    -- Set initial X based on initial
-    local function updateThumbByValue(val)
-        local frac = (val - min) / (max - min)
-        fill.Size = UDim2.new(math.clamp(frac,0,1),0,1,0)
-        local barAbs = bar.AbsolutePosition
-        local barW = bar.AbsoluteSize.X
-        local xOffset = math.clamp(frac * barW, 0, barW)
-        thumb.Position = UDim2.new(0, bar.Position.X.Offset + xOffset + 40, 0, 2)
-    end
-
-    -- Visual thumb (use ImageButton because it's interactive)
-    thumb.Position = UDim2.new(0, 40 + (initial/(max-min)) * (bar.AbsoluteSize.X or 200), 0, 2)
+    thumb.Parent = container
+    thumb.Size = UDim2.new(0, 14, 0, 14)
+    thumb.Position = UDim2.new(0, 40 + frac * (bar.Size.X.Offset > 0 and bar.Size.X.Offset or 200), 0, 22)
     thumb.BackgroundColor3 = C.accentGreen
     thumb.BorderSizePixel = 0
     thumb.AutoButtonColor = false
-    addUICorner(thumb, UDim.new(1,0))
-    thumb.Size = UDim2.new(0,16,0,16)
+    local tcorner = Instance.new("UICorner", thumb)
+    tcorner.CornerRadius = UDim.new(1,0)
 
-    -- Dragging logic
+    -- dragging
     local dragging = false
     local currentValue = initial
-    local function setValueFromX(x)
-        local barPos = bar.AbsolutePosition.X
-        local barW = bar.AbsoluteSize.X
-        local rel = (x - barPos)
-        local frac = math.clamp(rel / barW, 0, 1)
-        local val = math.floor(min + frac * (max - min) + 0.5)
-        currentValue = val
-        valueLabel.Text = tostring(val)
-        fill.Size = UDim2.new(frac,0,1,0)
-        -- position thumb precisely
-        local newX = bar.Position.X.Offset + frac * barW + 40
-        thumb.Position = UDim2.new(0, newX, 0, 2)
-    end
-
     thumb.InputBegan:Connect(function(input)
         if input.UserInputType == Enum.UserInputType.MouseButton1 then
             dragging = true
@@ -668,144 +508,137 @@ local function createSliderLine(parent, labelText, min, max, initial)
     RunService.Heartbeat:Connect(function()
         if dragging then
             local mouse = player:GetMouse()
-            setValueFromX(mouse.X)
+            local barPos = bar.AbsolutePosition.X
+            local barW = bar.AbsoluteSize.X
+            local rel = math.clamp(mouse.X - barPos, 0, barW)
+            local frac2 = (barW > 0) and (rel / barW) or 0
+            local val = math.floor(min + frac2 * (max - min) + 0.5)
+            currentValue = val
+            value.Text = tostring(val)
+            fill.Size = UDim2.new(frac2, 0, 1, 0)
+            thumb.Position = UDim2.new(0, 40 + frac2 * barW, 0, 22)
         end
     end)
-
-    -- Also allow clicking on bar to jump
     bar.InputBegan:Connect(function(input)
         if input.UserInputType == Enum.UserInputType.MouseButton1 then
             local mouse = player:GetMouse()
-            setValueFromX(mouse.X)
+            local barPos = bar.AbsolutePosition.X
+            local barW = bar.AbsoluteSize.X
+            local rel = math.clamp(mouse.X - barPos, 0, barW)
+            local frac2 = (barW > 0) and (rel / barW) or 0
+            local val = math.floor(min + frac2 * (max - min) + 0.5)
+            currentValue = val
+            value.Text = tostring(val)
+            fill.Size = UDim2.new(frac2, 0, 1, 0)
+            thumb.Position = UDim2.new(0, 40 + frac2 * barW, 0, 22)
         end
     end)
-
-    -- initial update (defer a tick in case AbsoluteSize not ready)
-    delay(0.01, function()
-        if bar.AbsoluteSize.X > 0 then
-            updateThumbByValue(initial)
-            valueLabel.Text = tostring(initial)
-        end
-    end)
-
-    return line, function() return currentValue end
+    return container
 end
 
--- Compose the left-most column of cards (matching your HTML)
-local cardAA, cardAAContent = createSettingsCard("Anti-aimbot angles")
-cardAA.LayoutOrder = 1
-
--- Build content inside Anti-aim card
+-- build an Anti-aim card on the Aimbot_AA page (example, matching your HTML content)
+local aaCard = createCard(pageAimbotAA, "Anti-aimbot angles")
 do
-    -- Enabled toggle
-    local tline, tget = createToggleLine(cardAAContent, "Enabled", true)
-    tline.Parent = cardAAContent
+    addToggleLine(aaCard, "Enabled", true)
+    -- pitch dropdown (simple text label + small box)
+    local dd = Instance.new("Frame")
+    dd.Parent = aaCard
+    dd.Size = UDim2.new(1,0,0,36)
+    dd.Position = UDim2.new(0,0,0,66)
+    dd.BackgroundTransparency = 1
 
-    -- Pitch dropdown
-    local dd1, dd1get = createDropdownLine(cardAAContent, "Pitch", {"Off"}, 1)
-    dd1.Parent = cardAAContent
+    local lbl = Instance.new("TextLabel")
+    lbl.Parent = dd
+    lbl.Size = UDim2.new(0.6,0,1,0)
+    lbl.BackgroundTransparency = 1
+    lbl.Text = "Pitch"
+    lbl.Font = Enum.Font.Gotham
+    lbl.TextSize = 13
+    lbl.TextColor3 = C.textLight
+    lbl.TextXAlignment = Enum.TextXAlignment.Left
 
-    -- Yaw base dropdown
-    local dd2, dd2get = createDropdownLine(cardAAContent, "Yaw base", {"Local view"}, 1)
-    dd2.Parent = cardAAContent
-
-    -- Yaw slider
-    local s1, s1get = createSliderLine(cardAAContent, "Yaw", 0, 100, 50)
-    s1.Parent = cardAAContent
-
-    -- Yaw jitter
-    local s2, s2get = createSliderLine(cardAAContent, "Yaw jitter", 0, 100, 0)
-    s2.Parent = cardAAContent
-
-    -- Body yaw
-    local s3, s3get = createSliderLine(cardAAContent, "Body yaw", 0, 100, 0)
-    s3.Parent = cardAAContent
-
-    -- Freestanding body yaw (toggle + slider)
-    local fsLine = Instance.new("Frame")
-    fsLine.Size = UDim2.new(1,0,0,56)
-    fsLine.BackgroundTransparency = 1
-    fsLine.Parent = cardAAContent
-
-    local fsLabel = Instance.new("TextLabel")
-    fsLabel.Parent = fsLine
-    fsLabel.Size = UDim2.new(0.66,0,0,20)
-    fsLabel.Position = UDim2.new(0,0,0,0)
-    fsLabel.BackgroundTransparency = 1
-    fsLabel.Text = "Freestanding body yaw"
-    fsLabel.Font = Enum.Font.Gotham
-    fsLabel.TextSize = 14
-    fsLabel.TextColor3 = C.textLight
-    fsLabel.TextXAlignment = Enum.TextXAlignment.Left
-
-    local fsToggle = createToggleLine(fsLine, "", true) -- reuse toggle to render; returns line and getter, but we already put into fsLine
-    -- Slider below:
-    local fsSlider, fsGet = createSliderLine(cardAAContent, "Freestanding body yaw value", 0, 100, 60)
-    fsSlider.Parent = cardAAContent
-
-    -- Edge yaw and freestanding select
-    local tEdge, edgeGet = createToggleLine(cardAAContent, "Edge yaw", false)
-    tEdge.Parent = cardAAContent
-
-    local dd3, dd3get = createDropdownLine(cardAAContent, "Freestanding", {"-"}, 1)
-    dd3.Parent = cardAAContent
+    local box = Instance.new("TextButton")
+    box.Parent = dd
+    box.AnchorPoint = Vector2.new(1,0)
+    box.Position = UDim2.new(1, -6, 0, 6)
+    box.Size = UDim2.new(0,120,0,24)
+    box.Text = "Off"
+    box.Font = Enum.Font.Gotham
+    box.TextSize = 13
+    box.TextColor3 = C.textLight
+    box.BackgroundColor3 = C.bgControl
+    box.BorderColor3 = C.borderColor
+    local bc = Instance.new("UICorner", box)
+    bc.CornerRadius = UDim.new(0,6)
 end
 
--- Fake lag card (middle column)
-local cardFL, cardFLContent = createSettingsCard("Fake lag")
-cardFL.LayoutOrder = 2
-
+-- yaw slider
+addSliderLine(aaCard, "Yaw", 0, 100, 50)
+-- yaw jitter
+addSliderLine(aaCard, "Yaw jitter", 0, 100, 0)
+-- body yaw
+addSliderLine(aaCard, "Body yaw", 0, 100, 0)
+-- freestanding body yaw toggle + slider
+addToggleLine(aaCard, "Freestanding body yaw", true)
+addSliderLine(aaCard, "Freestanding body yaw (value)", 0, 100, 60)
+-- edge yaw toggle
+addToggleLine(aaCard, "Edge yaw", false)
+-- freestanding dropdown
 do
-    local tline, tget = createToggleLine(cardFLContent, "Enabled", true)
-    tline.Parent = cardFLContent
+    local dd = Instance.new("Frame")
+    dd.Parent = aaCard
+    dd.Size = UDim2.new(1,0,0,36)
+    dd.Position = UDim2.new(0,0,0,220)
+    dd.BackgroundTransparency = 1
 
-    local dd, ddget = createDropdownLine(cardFLContent, "Amount", {"Dynamic"}, 1)
-    dd.Parent = cardFLContent
+    local lbl = Instance.new("TextLabel")
+    lbl.Parent = dd
+    lbl.Size = UDim2.new(0.6,0,1,0)
+    lbl.BackgroundTransparency = 1
+    lbl.Text = "Freestanding"
+    lbl.Font = Enum.Font.Gotham
+    lbl.TextSize = 13
+    lbl.TextColor3 = C.textLight
+    lbl.TextXAlignment = Enum.TextXAlignment.Left
 
-    local sVar, sVarGet = createSliderLine(cardFLContent, "Variance", 0, 100, 0)
-    sVar.Parent = cardFLContent
-
-    local sLimit, sLimitGet = createSliderLine(cardFLContent, "Limit", 0, 100, 0)
-    sLimit.Parent = cardFLContent
+    local box = Instance.new("TextButton")
+    box.Parent = dd
+    box.AnchorPoint = Vector2.new(1,0)
+    box.Position = UDim2.new(1, -6, 0, 6)
+    box.Size = UDim2.new(0,120,0,24)
+    box.Text = "-"
+    box.Font = Enum.Font.Gotham
+    box.TextSize = 13
+    box.TextColor3 = C.textLight
+    box.BackgroundColor3 = C.bgControl
+    box.BorderColor3 = C.borderColor
+    local bc = Instance.new("UICorner", box)
+    bc.CornerRadius = UDim.new(0,6)
 end
 
--- Other card (right column)
-local cardOther, cardOtherContent = createSettingsCard("Other")
-cardOther.LayoutOrder = 3
-
+-- simple Visuals placeholder card
+local visCard = createCard(pageVisualsPlayers, "Players (visuals)")
 do
-    local tline, tget = createToggleLine(cardOtherContent, "Slow motion", true)
-    tline.Parent = cardOtherContent
-
-    local dd1, dd1get = createDropdownLine(cardOtherContent, "Slow motion type", {"Favor high speed"}, 1)
-    dd1.Parent = cardOtherContent
-
-    local dd2, dd2get = createDropdownLine(cardOtherContent, "Leg movement", {"Off"}, 1)
-    dd2.Parent = cardOtherContent
-
-    local tshot, tshotGet = createToggleLine(cardOtherContent, "On shot anti-aim", false)
-    tshot.Parent = cardOtherContent
-
-    local fpeek, fpeekGet = createToggleLine(cardOtherContent, "Fake peek", false)
-    fpeek.Parent = cardOtherContent
+    addToggleLine(visCard, "Players on", true)
 end
 
--- Refresh contentBody canvas size after children layout
-local function refreshCanvas()
-    local totalHeight = 0
-    for _, child in pairs(contentBody:GetChildren()) do
-        if child:IsA("Frame") and child.Visible then
-            totalHeight = totalHeight + child.AbsoluteSize.Y + (contentLayout.CellPadding.Y.Offset or 24)
-        end
-    end
-    contentBody.CanvasSize = UDim2.new(0,0,0,math.max(totalHeight, contentBody.AbsoluteSize.Y))
+-- Misc placeholder
+local miscCard = createCard(pageMiscMain, "Main (misc)")
+do
+    addToggleLine(miscCard, "Some misc toggle", false)
 end
 
-contentBody:GetPropertyChangedSignal("CanvasPosition"):Connect(function() end)
-contentBody:GetPropertyChangedSignal("AbsoluteSize"):Connect(function() refreshCanvas() end)
+-- optional: put multiple cards into a single page by creating more using createCard(pageX, "Title")
+-- Example: add two cards into Aimbot_Rage page to show structure
+local rageCard = createCard(pageAimbotRage, "RageBot Settings")
+addToggleLine(rageCard, "Enabled", true)
+addSliderLine(rageCard, "FOV", 0, 180, 30)
 
--- initial refresh in case AbsoluteSize values require a tick
-delay(0.03, function() refreshCanvas() end)
+-- set default active tab
+setActiveTab("Aimbot_AA")
 
--- End result message (print)
-print("GameSense UI created for player:", player.Name)
+-- SMALL UTILITY: when the page content changes size, ScrollingFrame will automatically adjust (AutomaticCanvasSize)
+-- But ensure cards are arranged: our cards have fixed pixel widths; depending on screen size they may wrap. They stack vertically in UIListLayout.
+
+-- Final note printed
+print("Compact GameSense UI created. SIDEBAR_WIDTH =", SIDEBAR_WIDTH, "CARD WxH =", CARD_WIDTH, CARD_HEIGHT)
