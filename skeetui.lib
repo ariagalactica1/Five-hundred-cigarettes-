@@ -1,412 +1,605 @@
--- Gamesense-like UI (Roblox LocalScript)
--- Place this as a LocalScript under StarterPlayerScripts or StarterGui
+-- stepby.lua - Local-sided UI inspired by the provided Gamesense panel
+-- Place this file in a LocalScript (e.g., StarterPlayerScripts) to run on the client
+
+-- Wait for game
+if not game:IsLoaded() then game.Loaded:Wait() end
 
 local Players = game:GetService("Players")
-local UserInputService = game:GetService("UserInputService")
+local UIS = game:GetService("UserInputService")
+local RunService = game:GetService("RunService")
 local TweenService = game:GetService("TweenService")
 
-local lp = Players.LocalPlayer
-local pg = lp:WaitForChild("PlayerGui")
+local localPlayer = Players.LocalPlayer
+local playerGui = localPlayer:WaitForChild("PlayerGui")
 
--- Theme
-local T = {
-	bg = Color3.fromRGB(12, 15, 14),
-	sidebar = Color3.fromRGB(20, 24, 22),
-	surface = Color3.fromRGB(23, 27, 25),
-	panel = Color3.fromRGB(26, 30, 28),
-	stroke = Color3.fromRGB(255, 255, 255),
-	muted = Color3.fromRGB(150, 160, 155),
-	text = Color3.fromRGB(230, 235, 230),
-	accent = Color3.fromRGB(130, 255, 60),
-	accentGlow = Color3.fromRGB(90, 180, 40)
+-- Remove previous instances if re-run
+local existing = playerGui:FindFirstChild("StepByUI")
+if existing then existing:Destroy() end
+
+-- THEME
+local theme = {
+	bg = Color3.fromRGB(18, 19, 22),
+	panel = Color3.fromRGB(26, 27, 31),
+	subtle = Color3.fromRGB(34, 36, 42),
+	stroke = Color3.fromRGB(48, 50, 58),
+	accent = Color3.fromRGB(92, 214, 103),
+	accentDim = Color3.fromRGB(62, 160, 78),
+	text = Color3.fromRGB(235, 235, 245),
+	muted = Color3.fromRGB(160, 164, 175),
+	shadow = Color3.fromRGB(0, 0, 0),
+	red = Color3.fromRGB(255, 95, 95),
 }
 
--- Helpers
-local function create(className, props, children)
-	local inst = Instance.new(className)
-	if props then
-		for k, v in pairs(props) do
-			if k ~= "Parent" then inst[k] = v end
-		end
-	end
-	if children then
-		for _, c in ipairs(children) do c.Parent = inst end
-	end
-	if props and props.Parent then inst.Parent = props.Parent end
-	return inst
+-- UTIL
+local function round(gui, r)
+	local c = Instance.new("UICorner")
+	c.CornerRadius = UDim.new(0, r or 6)
+	c.Parent = gui
+	return c
 end
 
-local function roundify(inst, radius)
-	create("UICorner", {CornerRadius = UDim.new(0, radius or 8), Parent = inst})
+local function stroke(gui, color, thickness)
+	local s = Instance.new("UIStroke")
+	s.Thickness = thickness or 1
+	s.Color = color or theme.stroke
+	s.ApplyStrokeMode = Enum.ApplyStrokeMode.Border
+	s.Parent = gui
+	return s
 end
 
-local function stroke(inst, thickness, transparency, color)
-	create("UIStroke", {
-		Thickness = thickness or 1,
-		Transparency = transparency or 0.8,
-		ApplyStrokeMode = Enum.ApplyStrokeMode.Border,
-		Color = color or T.stroke,
-		Parent = inst,
-	})
+local function pad(gui, l, t, r, b)
+	local p = Instance.new("UIPadding")
+	p.PaddingLeft = UDim.new(0, l or 0)
+	p.PaddingTop = UDim.new(0, t or 0)
+	p.PaddingRight = UDim.new(0, r or 0)
+	p.PaddingBottom = UDim.new(0, b or 0)
+	p.Parent = gui
+	return p
 end
 
-local function padding(inst, l, t, r, b)
-	create("UIPadding", {PaddingLeft=UDim.new(0,l or 0), PaddingTop=UDim.new(0,t or 0), PaddingRight=UDim.new(0,r or 0), PaddingBottom=UDim.new(0,b or 0), Parent=inst})
+local function vlist(parent, padding)
+	local list = Instance.new("UIListLayout")
+	list.FillDirection = Enum.FillDirection.Vertical
+	list.HorizontalAlignment = Enum.HorizontalAlignment.Left
+	list.VerticalAlignment = Enum.VerticalAlignment.Top
+	list.Padding = UDim.new(0, padding or 8)
+	list.SortOrder = Enum.SortOrder.LayoutOrder
+	list.Parent = parent
+	return list
 end
 
-local function list(inst, horizontal, paddingPx)
-	local layout = create(horizontal and "UIListLayout" or "UIListLayout", {
-		FillDirection = horizontal and Enum.FillDirection.Horizontal or Enum.FillDirection.Vertical,
-		HorizontalAlignment = Enum.HorizontalAlignment.Left,
-		VerticalAlignment = Enum.VerticalAlignment.Top,
-		Padding = UDim.new(0, paddingPx or 8),
-		Parent = inst,
-	})
-	return layout
+local function hlist(parent, padding)
+	local list = Instance.new("UIListLayout")
+	list.FillDirection = Enum.FillDirection.Horizontal
+	list.HorizontalAlignment = Enum.HorizontalAlignment.Left
+	list.VerticalAlignment = Enum.VerticalAlignment.Center
+	list.Padding = UDim.new(0, padding or 8)
+	list.SortOrder = Enum.SortOrder.LayoutOrder
+	list.Parent = parent
+	return list
 end
 
-local function grid2(parent, gap)
-	local holder = create("Frame", {BackgroundTransparency = 1, Size = UDim2.new(1,0,0,0), AutomaticSize = Enum.AutomaticSize.Y, Parent = parent})
-	local layout = create("UIGridLayout", {
-		CellPadding = UDim2.fromOffset(gap or 12, gap or 12),
-		CellSize = UDim2.new(0.5, -((gap or 12)/2), 0, 58),
-		HorizontalAlignment = Enum.HorizontalAlignment.Left,
-		SortOrder = Enum.SortOrder.LayoutOrder,
-		Parent = holder,
-	})
-	return holder, layout
+local function makeText(parent, text, size, color, bold)
+	local lbl = Instance.new("TextLabel")
+	lbl.BackgroundTransparency = 1
+	lbl.Font = Enum.Font.Gotham
+	lbl.Text = text or ""
+	lbl.TextXAlignment = Enum.TextXAlignment.Left
+	lbl.TextYAlignment = Enum.TextYAlignment.Center
+	lbl.TextSize = size or 14
+	lbl.TextColor3 = color or theme.text
+	lbl.RichText = true
+	lbl.Parent = parent
+	lbl.AutoLocalize = false
+	if bold then lbl.FontFace.Weight = Enum.FontWeight.Bold end
+	return lbl
 end
 
--- Components
-local function Label(parent, text, size, color, bold)
-	return create("TextLabel", {
-		BackgroundTransparency = 1,
-		Text = text,
-		Font = bold and Enum.Font.GothamBold or Enum.Font.Gotham,
-		TextSize = size or 14,
-		TextColor3 = color or T.text,
-		TextXAlignment = Enum.TextXAlignment.Left,
-		Size = UDim2.new(1,0,0,20),
-		Parent = parent,
-	})
+local function tween(o, tinfo, props)
+	TweenService:Create(o, tinfo or TweenInfo.new(0.15, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), props):Play()
 end
 
-local function SectionTitle(parent, text)
-	local t = Label(parent, text, 16, T.text, true)
-	t.TextTransparency = 0.08
-	return t
-end
+-- DRAGGING
+local function makeDraggable(dragHandle, target)
+	local dragging = false
+	local dragStart, startPos
 
-local function Toggle(parent, default)
-	local holder = create("Frame", {BackgroundTransparency=1, Size=UDim2.new(0,62,0,24), Parent=parent})
-	local track = create("Frame", {BackgroundColor3 = T.surface, Size = UDim2.new(1,0,1,0), Parent=holder})
-	roundify(track, 12)
-	stroke(track, 1, 0.85)
-	local knob = create("Frame", {BackgroundColor3 = Color3.fromRGB(180,185,180), Size = UDim2.new(0,20,0,20), Position=UDim2.fromOffset(2,2), Parent=track})
-	roundify(knob, 10)
-	local glow = create("ImageLabel", {BackgroundTransparency=1, Image="rbxassetid://5028857084", ImageColor3=T.accent, ImageTransparency=1, Size=UDim2.new(1,16,1,16), Position=UDim2.fromOffset(-8,-8), ZIndex=0, Parent=track})
-
-	holder.Active = true
-	holder.Selectable = true
-	local on = default and true or false
-	local function apply()
-		TweenService:Create(knob, TweenInfo.new(0.15, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), {
-			Position = on and UDim2.fromOffset(40,2) or UDim2.fromOffset(2,2),
-			BackgroundColor3 = on and Color3.fromRGB(240,255,240) or Color3.fromRGB(180,185,180)
-		}):Play()
-		TweenService:Create(track, TweenInfo.new(0.15), {BackgroundColor3 = on and T.accent or T.surface}):Play()
-		TweenService:Create(glow, TweenInfo.new(0.2), {ImageTransparency = on and 0.7 or 1}):Play()
-	end
-	apply()
-	track.InputBegan:Connect(function(io)
-		if io.UserInputType == Enum.UserInputType.MouseButton1 or io.UserInputType == Enum.UserInputType.Touch then
-			on = not on
-			apply()
+	dragHandle.InputBegan:Connect(function(input)
+		if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
+			dragging = true
+			dragStart = input.Position
+			startPos = target.Position
+			input.Changed:Connect(function()
+				if input.UserInputState == Enum.UserInputState.End then dragging = false end
+			end)
 		end
 	end)
-	return setmetatable({}, {
-		__index = {
-			Instance = holder,
-			Get = function() return on end,
-			Set = function(_, v) on=v; apply() end,
-		}
-	})
+
+	UIS.InputChanged:Connect(function(input)
+		if dragging and (input.UserInputType == Enum.UserInputType.MouseMovement or input.UserInputType == Enum.UserInputType.Touch) then
+			local delta = input.Position - dragStart
+			target.Position = UDim2.fromOffset(startPos.X.Offset + delta.X, startPos.Y.Offset + delta.Y)
+		end
+	end)
 end
 
-local function Dropdown(parent, items, defaultIndex)
-	local holder = create("Frame", {BackgroundColor3=T.surface, Size=UDim2.new(1,0,0,36), Parent=parent})
-	roundify(holder, 6)
-	stroke(holder,1,0.85)
-	local valueLabel = create("TextLabel", {BackgroundTransparency=1, Text=(items[defaultIndex or 1] or ""), Font=Enum.Font.Gotham, TextSize=14, TextColor3=T.text, TextXAlignment=Enum.TextXAlignment.Left, Size=UDim2.new(1,-36,1,0), Position=UDim2.fromOffset(12,0), Parent=holder})
-	local caret = create("TextLabel", {BackgroundTransparency=1, Text="▼", Font=Enum.Font.GothamBold, TextSize=14, TextColor3=T.muted, Size=UDim2.fromOffset(24,36), Position=UDim2.fromOffset(holder.AbsoluteSize.X-24,0), AnchorPoint=Vector2.new(1,0), Parent=holder})
-	local listFrame = create("Frame", {BackgroundColor3=T.surface, Visible=false, Size=UDim2.new(1,0,0, (#items*28)+8), Position=UDim2.fromOffset(0,36), Parent=holder, ZIndex=10})
-	roundify(listFrame, 6)
-	stroke(listFrame,1,0.8)
-	padding(listFrame,8,8,8,8)
-	local ll = list(listFrame, false, 4)
+-- ROOT GUI
+local ui = Instance.new("ScreenGui")
+ui.Name = "StepByUI"
+ui.ResetOnSpawn = false
+ui.ZIndexBehavior = Enum.ZIndexBehavior.Global
+ui.Parent = playerGui
 
-	local index = defaultIndex or 1
-	local function setIndex(i)
-		index = i
-		valueLabel.Text = items[i]
+-- MAIN WINDOW
+local main = Instance.new("Frame")
+main.Name = "Main"
+main.Size = UDim2.fromOffset(980, 570)
+main.Position = UDim2.fromScale(0.5, 0.5)
+main.AnchorPoint = Vector2.new(0.5, 0.5)
+main.BackgroundColor3 = theme.panel
+main.BorderSizePixel = 0
+main.Parent = ui
+round(main, 10)
+stroke(main, theme.subtle, 1)
+
+-- TOP BAR
+local top = Instance.new("Frame")
+top.Name = "TopBar"
+top.Size = UDim2.new(1, 0, 0, 44)
+top.BackgroundColor3 = theme.bg
+top.BorderSizePixel = 0
+round(top, 10)
+-- mask round only top by overlaying a separate cornered frame
+local topMask = Instance.new("UICorner")
+topMask.CornerRadius = UDim.new(0, 10)
+topMask.Parent = top
+
+top.Parent = main
+stroke(top, theme.subtle, 1)
+
+local title = makeText(top, "GAMESENSE", 18, theme.text, true)
+title.Size = UDim2.fromOffset(200, 44)
+title.Position = UDim2.fromOffset(16, 0)
+
+local saveBtn = Instance.new("TextButton")
+saveBtn.Name = "Save"
+saveBtn.Text = "Save"
+saveBtn.Font = Enum.Font.Gotham
+saveBtn.TextSize = 14
+saveBtn.TextColor3 = theme.text
+saveBtn.AutoButtonColor = false
+saveBtn.Size = UDim2.fromOffset(72, 28)
+saveBtn.Position = UDim2.new(1, -88, 0, 8)
+saveBtn.BackgroundColor3 = theme.subtle
+saveBtn.Parent = top
+round(saveBtn, 6)
+stroke(saveBtn, theme.stroke, 1)
+
+local function buttonHover(btn)
+	btn.MouseEnter:Connect(function() tween(btn, nil, {BackgroundColor3 = theme.stroke}) end)
+	btn.MouseLeave:Connect(function() tween(btn, nil, {BackgroundColor3 = theme.subtle}) end)
+end
+buttonHover(saveBtn)
+
+makeDraggable(top, main)
+
+-- BODY
+local body = Instance.new("Frame")
+body.Name = "Body"
+body.BackgroundColor3 = theme.panel
+body.BorderSizePixel = 0
+body.Position = UDim2.fromOffset(0, 44)
+body.Size = UDim2.new(1, 0, 1, -44)
+body.Parent = main
+
+-- SIDEBAR
+local sidebar = Instance.new("Frame")
+sidebar.Name = "Sidebar"
+sidebar.BackgroundColor3 = theme.bg
+sidebar.BorderSizePixel = 0
+sidebar.Size = UDim2.fromOffset(190, body.Size.Y.Offset)
+sidebar.Position = UDim2.fromOffset(0, 0)
+sidebar.Parent = body
+stroke(sidebar, theme.subtle, 1)
+
+local sidebarList = Instance.new("ScrollingFrame")
+sidebarList.Name = "List"
+sidebarList.Size = UDim2.new(1, 0, 1, -16)
+sidebarList.Position = UDim2.fromOffset(0, 8)
+sidebarList.BackgroundTransparency = 1
+sidebarList.BorderSizePixel = 0
+sidebarList.ScrollBarThickness = 3
+sidebarList.ScrollBarImageColor3 = theme.stroke
+sidebarList.Parent = sidebar
+pad(sidebarList, 12, 8, 12, 8)
+
+vlist(sidebarList, 6)
+
+local function sideButton(text, active)
+	local btn = Instance.new("TextButton")
+	btn.Text = text
+	btn.Font = Enum.Font.Gotham
+	btn.TextSize = 14
+	btn.TextXAlignment = Enum.TextXAlignment.Left
+	btn.AutoButtonColor = false
+	btn.Size = UDim2.new(1, 0, 0, 32)
+	btn.BackgroundColor3 = active and theme.subtle or theme.bg
+	btn.TextColor3 = active and theme.text or theme.muted
+	round(btn, 6)
+	stroke(btn, theme.stroke, 1)
+	btn.Parent = sidebarList
+	btn.MouseEnter:Connect(function()
+		if btn.BackgroundColor3 ~= theme.subtle then tween(btn, nil, {BackgroundColor3 = theme.panel}) end
+	end)
+	btn.MouseLeave:Connect(function()
+		if btn.BackgroundColor3 ~= theme.subtle then tween(btn, nil, {BackgroundColor3 = theme.bg}) end
+	end)
+	return btn
+end
+
+local cats = {
+	"RageBot", "Anti Aim", "Legitbot",
+	"Players", "Weapon", "Grenades", "Bomb",
+	"World", "View", "Miscellaneous", "Main", "Inventory", "Lua", "Configs"
+}
+
+for i, c in ipairs(cats) do
+	sideButton(c, c == "Anti Aim").LayoutOrder = i
+end
+
+-- CONTENT AREA
+local content = Instance.new("Frame")
+content.Name = "Content"
+content.BackgroundColor3 = theme.panel
+content.BorderSizePixel = 0
+content.Position = UDim2.fromOffset(190, 0)
+content.Size = UDim2.new(1, -190, 1, 0)
+content.Parent = body
+
+-- Two-column layout
+local contentPad = pad(content, 16, 16, 16, 16)
+local columns = Instance.new("UIGridLayout")
+columns.CellPadding = UDim2.fromOffset(16, 16)
+columns.CellSize = UDim2.new(0.5, -8, 1, 0) -- two columns
+columns.FillDirectionMaxCells = 2
+columns.SortOrder = Enum.SortOrder.LayoutOrder
+columns.HorizontalAlignment = Enum.HorizontalAlignment.Left
+columns.VerticalAlignment = Enum.VerticalAlignment.Top
+columns.Parent = content
+
+-- GroupBox factory
+local function groupBox(titleText)
+	local box = Instance.new("Frame")
+	box.Name = titleText:gsub(" ","") .. "Box"
+	box.BackgroundColor3 = theme.bg
+	box.BorderSizePixel = 0
+	box.Size = UDim2.new(0, 0, 1, 0) -- grid will size it
+	box.Parent = content
+	round(box, 8)
+	stroke(box, theme.subtle, 1)
+
+	local header = Instance.new("Frame")
+	header.Name = "Header"
+	header.BackgroundTransparency = 1
+	header.Size = UDim2.new(1, -16, 0, 34)
+	header.Position = UDim2.fromOffset(8, 6)
+	header.Parent = box
+
+	local hLabel = makeText(header, titleText, 16, theme.text, true)
+	hLabel.Size = UDim2.new(1, 0, 1, 0)
+
+	local sep = Instance.new("Frame")
+	sep.BackgroundColor3 = theme.subtle
+	sep.BorderSizePixel = 0
+	sep.Size = UDim2.new(1, -16, 0, 1)
+	sep.Position = UDim2.fromOffset(8, 40)
+	sep.Parent = box
+
+	local area = Instance.new("Frame")
+	area.Name = "Area"
+	area.BackgroundTransparency = 1
+	area.Position = UDim2.fromOffset(8, 48)
+	area.Size = UDim2.new(1, -16, 1, -56)
+	area.Parent = box
+
+	local scroll = Instance.new("ScrollingFrame")
+	scroll.Name = "Scroll"
+	scroll.BackgroundTransparency = 1
+	scroll.Size = UDim2.fromScale(1, 1)
+	scroll.CanvasSize = UDim2.new(0, 0, 0, 0)
+	scroll.ScrollBarThickness = 3
+	scroll.ScrollBarImageColor3 = theme.stroke
+	scroll.Parent = area
+	pad(scroll, 4, 4, 4, 4)
+
+	local layout = vlist(scroll, 10)
+	layout:GetPropertyChangedSignal("AbsoluteContentSize"):Connect(function()
+		scroll.CanvasSize = UDim2.fromOffset(0, layout.AbsoluteContentSize.Y + 8)
+	end)
+
+	return box, scroll
+end
+
+-- Controls factories
+local State = {}
+
+local function rowContainer(parent)
+	local r = Instance.new("Frame")
+	r.BackgroundTransparency = 1
+	r.Size = UDim2.new(1, 0, 0, 32)
+	r.Parent = parent
+	hlist(r, 8)
+	return r
+end
+
+local function Toggle(parent, label, key, default, callback)
+	local row = rowContainer(parent)
+	row.Size = UDim2.new(1, 0, 0, 30)
+	local tLabel = makeText(row, label, 14, theme.muted, false)
+	tLabel.Size = UDim2.new(1, -60, 1, 0)
+
+	local btn = Instance.new("TextButton")
+	btn.Text = ""
+	btn.AutoButtonColor = false
+	btn.Size = UDim2.fromOffset(46, 24)
+	btn.BackgroundColor3 = theme.subtle
+	btn.Parent = row
+	round(btn, 12)
+	stroke(btn, theme.stroke, 1)
+
+	local knob = Instance.new("Frame")
+	knob.Size = UDim2.fromOffset(20, 20)
+	knob.Position = UDim2.fromOffset(2, 2)
+	knob.BackgroundColor3 = theme.muted
+	knob.Parent = btn
+	round(knob, 10)
+
+	local on = default or false
+	State[key] = on
+
+	local function render()
+		if on then
+			btn.BackgroundColor3 = theme.accent
+			knob.Position = UDim2.fromOffset(24, 2)
+			knob.BackgroundColor3 = Color3.fromRGB(255,255,255)
+		else
+			btn.BackgroundColor3 = theme.subtle
+			knob.Position = UDim2.fromOffset(2, 2)
+			knob.BackgroundColor3 = theme.muted
+		end
 	end
-	for i, name in ipairs(items) do
-		local b = create("TextButton", {BackgroundColor3 = Color3.fromRGB(28,32,30), AutoButtonColor=false, Size=UDim2.new(1,0,0,24), Text = name, Font=Enum.Font.Gotham, TextSize=13, TextColor3 = (i==index) and T.accent or T.text, Parent=listFrame})
-		roundify(b,4)
-		b.MouseButton1Click:Connect(function()
-			setIndex(i)
-			listFrame.Visible = false
+
+	btn.MouseButton1Click:Connect(function()
+		on = not on
+		State[key] = on
+		render()
+		if callback then callback(on) end
+	end)
+
+	render()
+	return setmetatable({}, {__index = {Set = function(_, v) on=v State[key]=v render() end}})
+end
+
+local function Slider(parent, label, key, min, max, default, step, callback)
+	local row = rowContainer(parent)
+	row.Size = UDim2.new(1, 0, 0, 46)
+	local tLabel = makeText(row, label, 14, theme.muted, false)
+	tLabel.Size = UDim2.new(1, 0, 0, 16)
+	tLabel.LayoutOrder = 1
+
+	local container = Instance.new("Frame")
+	container.Size = UDim2.new(1, 0, 0, 24)
+	container.BackgroundColor3 = theme.subtle
+	container.Parent = row
+	round(container, 6)
+	stroke(container, theme.stroke, 1)
+
+	local fill = Instance.new("Frame")
+	fill.Size = UDim2.fromScale(0, 1)
+	fill.BackgroundColor3 = theme.accent
+	fill.BorderSizePixel = 0
+	fill.Parent = container
+	round(fill, 6)
+
+	local drag = Instance.new("Frame")
+	drag.BackgroundTransparency = 1
+	drag.Size = UDim2.fromScale(1, 1)
+	drag.Parent = container
+
+	local valText = makeText(container, "", 12, theme.text, false)
+	valText.Size = UDim2.new(1, -8, 1, 0)
+	valText.Position = UDim2.fromOffset(8, 0)
+	valText.TextXAlignment = Enum.TextXAlignment.Right
+
+	min = min or 0; max = max or 100
+	step = step or 1
+	local value = math.clamp(default or min, min, max)
+	State[key] = value
+
+	local function percentFromValue(v)
+		return (v - min) / (max - min)
+	end
+
+	local function valueFromX(x)
+		local abs = container.AbsoluteSize.X
+		local p = math.clamp(x / abs, 0, 1)
+		local raw = min + (max - min) * p
+		local snapped = math.floor((raw + step/2) / step) * step
+		return math.clamp(snapped, min, max)
+	end
+
+	local function render()
+		fill.Size = UDim2.fromScale(percentFromValue(value), 1)
+		valText.Text = string.format("%s", tostring(value))
+	end
+
+	local sliding = false
+	drag.InputBegan:Connect(function(input)
+		if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
+			sliding = true
+			if input.UserInputType == Enum.UserInputType.MouseButton1 then
+				value = valueFromX((UIS:GetMouseLocation() - Vector2.new(container.AbsolutePosition.X, 0)).X)
+				State[key] = value
+				render()
+				if callback then callback(value) end
+			end
+			input.Changed:Connect(function()
+				if input.UserInputState == Enum.UserInputState.End then sliding = false end
+			end)
+		end
+	end)
+
+	UIS.InputChanged:Connect(function(input)
+		if sliding and (input.UserInputType == Enum.UserInputType.MouseMovement or input.UserInputType == Enum.UserInputType.Touch) then
+			value = valueFromX((UIS:GetMouseLocation() - Vector2.new(container.AbsolutePosition.X, 0)).X)
+			State[key] = value
+			render()
+			if callback then callback(value) end
+		end
+	end)
+
+	render()
+	return setmetatable({}, {__index = {Set = function(_, v) value=math.clamp(v,min,max) State[key]=value render() end}})
+end
+
+local function Dropdown(parent, label, key, items, default, callback)
+	items = items or {"Off"}
+	local row = rowContainer(parent)
+	row.Size = UDim2.new(1, 0, 0, 64)
+
+	local tLabel = makeText(row, label, 14, theme.muted, false)
+	tLabel.Size = UDim2.new(1, 0, 0, 16)
+
+	local box = Instance.new("TextButton")
+	box.Text = ""
+	box.AutoButtonColor = false
+	box.Size = UDim2.new(1, 0, 0, 28)
+	box.BackgroundColor3 = theme.subtle
+	box.Parent = row
+	round(box, 6)
+	stroke(box, theme.stroke, 1)
+
+	local current = makeText(box, default or items[1], 14, theme.text, false)
+	current.Size = UDim2.new(1, -32, 1, 0)
+	current.Position = UDim2.fromOffset(8, 0)
+
+	local caret = makeText(box, "▼", 14, theme.muted, false)
+	caret.Size = UDim2.fromOffset(24, 28)
+	caret.Position = UDim2.new(1, -24, 0, 0)
+	caret.TextXAlignment = Enum.TextXAlignment.Center
+
+	local list = Instance.new("Frame")
+	list.Visible = false
+	list.BackgroundColor3 = theme.subtle
+	list.BorderSizePixel = 0
+	list.Size = UDim2.new(1, 0, 0, 28 * math.min(#items, 6))
+	list.Position = UDim2.fromOffset(0, 30)
+	list.Parent = row
+	round(list, 6)
+	stroke(list, theme.stroke, 1)
+	pad(list, 4, 4, 4, 4)
+	local l = vlist(list, 4)
+
+	local value = default or items[1]
+	State[key] = value
+
+	local function setValue(v)
+		value = v
+		State[key] = v
+		current.Text = v
+		if callback then callback(v) end
+	end
+
+	for i, it in ipairs(items) do
+		local opt = Instance.new("TextButton")
+		opt.Text = it
+		opt.Font = Enum.Font.Gotham
+		opt.TextSize = 14
+		opt.TextColor3 = theme.text
+		opt.AutoButtonColor = false
+		opt.BackgroundColor3 = theme.bg
+		opt.Size = UDim2.new(1, 0, 0, 24)
+		opt.Parent = list
+		round(opt, 4)
+		stroke(opt, theme.stroke, 1)
+		opt.MouseEnter:Connect(function() tween(opt, nil, {BackgroundColor3 = theme.panel}) end)
+		opt.MouseLeave:Connect(function() tween(opt, nil, {BackgroundColor3 = theme.bg}) end)
+		opt.MouseButton1Click:Connect(function()
+			setValue(it)
+			list.Visible = false
 		end)
 	end
 
-	holder.InputBegan:Connect(function(io)
-		if io.UserInputType == Enum.UserInputType.MouseButton1 then
-			listFrame.Visible = not listFrame.Visible
-		end
+	box.MouseButton1Click:Connect(function()
+		list.Visible = not list.Visible
 	end)
 
-	UserInputService.InputBegan:Connect(function(io)
-		if listFrame.Visible and io.UserInputType == Enum.UserInputType.MouseButton1 then
-			local p = io.Position
-			local abs = listFrame.AbsolutePosition
-			local sz = listFrame.AbsoluteSize
-			if not (p.X>=abs.X and p.X<=abs.X+sz.X and p.Y>=abs.Y and p.Y<=abs.Y+sz.Y) then
-				listFrame.Visible = false
-			end
-		end
-	end)
-
-	return {
-		Instance = holder,
-		Get = function() return items[index] end,
-		SetIndex = setIndex,
-	}
+	return setmetatable({}, {__index = {Set = function(_, v) setValue(v) end}})
 end
 
-local function Slider(parent, min, max, value)
-	min, max = min or 0, max or 100
-	local holder = create("Frame", {BackgroundTransparency=1, Size=UDim2.new(1,0,0,44), Parent=parent})
-	local bar = create("Frame", {BackgroundColor3 = Color3.fromRGB(40,44,42), Size=UDim2.new(1,0,0,6), Position=UDim2.fromOffset(0,20), Parent=holder})
-	roundify(bar, 3)
-	stroke(bar,1,0.85)
-	local fill = create("Frame", {BackgroundColor3=T.accent, Size=UDim2.new(0,0,1,0), Parent=bar})
-	roundify(fill, 3)
-	local knob = create("Frame", {BackgroundColor3 = Color3.fromRGB(235,245,235), Size=UDim2.fromOffset(14,14), AnchorPoint=Vector2.new(0.5,0.5), Position=UDim2.fromOffset(0,3), Parent=bar})
-	roundify(knob, 7)
-	local val = value or min
+-- GROUPS
+local leftBox, leftScroll = groupBox("Anti-aimbot angles")
+leftBox.LayoutOrder = 1
+local rightBox, rightScroll = groupBox("Fake lag")
+rightBox.LayoutOrder = 2
 
-	local function setFromX(x)
-		local ax = bar.AbsolutePosition.X
-		local aw = bar.AbsoluteSize.X
-		local alpha = math.clamp((x-ax)/aw,0,1)
-		val = math.floor(min + (max-min)*alpha + 0.5)
-		local px = math.floor(aw*alpha)
-		fill.Size = UDim2.new(0, px, 1, 0)
-		knob.Position = UDim2.fromOffset(px, 3)
-	end
+-- LEFT: Anti-aimbot angles
+Toggle(leftScroll, "Enabled", "aa_enabled", true)
+Dropdown(leftScroll, "Pitch", "aa_pitch", {"Off","Down","Up","Zero"}, "Off")
+Dropdown(leftScroll, "Yaw base", "aa_yaw_base", {"Local view","At targets","Manual"}, "Local view")
+Slider(leftScroll, "Yaw", "aa_yaw", -180, 180, 0, 1)
+Dropdown(leftScroll, "Yaw jitter", "aa_yaw_jitter", {"Off","Center","Random","Offset"}, "Off")
+Slider(leftScroll, "Body yaw", "aa_body_yaw", 0, 180, 0, 1)
+Dropdown(leftScroll, "Freestanding body yaw", "aa_fs_body_yaw", {"Off","Default","Jitter"}, "Off")
+Slider(leftScroll, "Edge yaw", "aa_edge_yaw", 0, 180, 0, 1)
+Dropdown(leftScroll, "Freestanding", "aa_freestanding", {"Off","On","Peek only","Always"}, "Off")
 
-	local function setVal(v)
-		v = math.clamp(v, min, max)
-		local aw = bar.AbsoluteSize.X
-		local alpha = (v-min)/(max-min)
-		local px = math.floor(aw*alpha)
-		val = v
-		fill.Size = UDim2.new(0, px, 1,0)
-		knob.Position = UDim2.fromOffset(px,3)
-	end
+-- RIGHT: Fake lag
+Toggle(rightScroll, "Enabled", "fl_enabled", true)
+Dropdown(rightScroll, "Amount", "fl_amount", {"Static","Adaptive","Dynamic"}, "Dynamic")
+Slider(rightScroll, "Variance", "fl_variance", 0, 100, 0, 1)
+Slider(rightScroll, "Limit", "fl_limit", 0, 16, 8, 1)
 
-	bar.InputBegan:Connect(function(io)
-		if io.UserInputType==Enum.UserInputType.MouseButton1 then
-			setFromX(io.Position.X)
-		end
+local otherSep = makeText(rightScroll, "Other", 14, theme.muted, true)
+otherSep.Size = UDim2.new(1, 0, 0, 18)
+
+Dropdown(rightScroll, "Slow motion type", "slowmo_type", {"Favor high speed","Favor distance","Balanced"}, "Favor high speed")
+Dropdown(rightScroll, "Leg movement", "leg_movement", {"Off","Always slide","While moving","While airborne"}, "Off")
+Toggle(rightScroll, "On shot anti-aim", "on_shot_aa", false)
+Toggle(rightScroll, "Fake peek", "fake_peek", false)
+
+-- SAVE BUTTON ACTION
+saveBtn.MouseButton1Click:Connect(function()
+	-- Simple print-out of current state; replace with datastore/serialization if needed
+	local json
+	pcall(function()
+		json = game:GetService("HttpService"):JSONEncode(State)
 	end)
-	UserInputService.InputChanged:Connect(function(io)
-		if io.UserInputType==Enum.UserInputType.MouseMovement and UserInputService:IsMouseButtonPressed(Enum.UserInputType.MouseButton1) then
-			setFromX(io.Position.X)
-		end
-	end)
-
-	RunService.Heartbeat:Wait()
-	setVal(val)
-
-	return {Instance = holder, Get=function() return val end, Set=setVal}
-end
-
--- Root GUI
-local gui = create("ScreenGui", {Name="GamesenseUI", IgnoreGuiInset=true, ZIndexBehavior=Enum.ZIndexBehavior.Sibling, ResetOnSpawn=false, Parent=pg})
-
-local root = create("Frame", {BackgroundColor3=T.bg, Size=UDim2.new(1,0,1,0), Parent=gui})
-local rootGrad = create("UIGradient", {Color = ColorSequence.new{ColorSequenceKeypoint.new(0, Color3.fromRGB(8,10,9)), ColorSequenceKeypoint.new(1, T.bg)}, Rotation=90, Parent=root})
-
--- Sidebar
-local sidebar = create("Frame", {BackgroundColor3=T.sidebar, Size=UDim2.new(0, 250, 1, 0), Parent=root})
-stroke(sidebar,1,0.8)
-local sbGrad = create("UIGradient", {Color=ColorSequence.new{ColorSequenceKeypoint.new(0, Color3.fromRGB(18,22,20)), ColorSequenceKeypoint.new(1, Color3.fromRGB(16,19,17))}, Rotation=90, Parent=sidebar})
-padding(sidebar, 18, 18, 16, 18)
-
-local brand = Label(sidebar, "GAMESENSE", 26, T.accent, true)
-brand.Size = UDim2.new(1,0,0,28)
-
-local navHolder = create("Frame", {BackgroundTransparency=1, Size = UDim2.new(1,0,1,-160), Position=UDim2.fromOffset(0,40), Parent=sidebar})
-local navList = list(navHolder, false, 16)
-
-local function NavSection(title, items, activeIndex)
-	local sec = create("Frame", {BackgroundTransparency=1, Size=UDim2.new(1,0,0,0), AutomaticSize=Enum.AutomaticSize.Y, Parent=navHolder})
-	Label(sec, title, 12, T.muted, true)
-	local itemsFrame = create("Frame", {BackgroundTransparency=1, Size=UDim2.new(1,0,0,0), AutomaticSize=Enum.AutomaticSize.Y, Parent=sec})
-	local l = list(itemsFrame, false, 6)
-	for i, name in ipairs(items) do
-		local item = create("TextButton", {AutoButtonColor=false, BackgroundColor3 = (i==activeIndex) and Color3.fromRGB(32,36,34) or Color3.fromRGB(24,28,26), Size = UDim2.new(1,0,0,28), Text="  "..name, Font=Enum.Font.Gotham, TextSize=14, TextColor3 = T.text, Parent=itemsFrame})
-		roundify(item, 6)
-		stroke(item, 1, 0.85)
-		if i==activeIndex then
-			local bar = create("Frame", {BackgroundColor3=T.accent, Size=UDim2.new(0,4,1,0), Parent=item})
-			roundify(bar,2)
+	if json then
+		print("[StepByUI] Saved state:", json)
+	else
+		print("[StepByUI] Current state:")
+		for k, v in pairs(State) do
+			print("  ", k, v)
 		end
 	end
-	return sec
-end
+	-- Flash feedback
+	saveBtn.Text = "Saved"
+	tween(saveBtn, TweenInfo.new(0.2), {BackgroundColor3 = theme.accent})
+	task.delay(0.6, function()
+		tween(saveBtn, TweenInfo.new(0.2), {BackgroundColor3 = theme.subtle})
+		saveBtn.Text = "Save"
+	end)
+end)
 
-NavSection("aimbot", {"RageBot","Anti Aim","Legitbot"}, 2)
-NavSection("visuals", {"Players","Weapon","Grenades","Bomb","World","View"}, nil)
-NavSection("miscellaneous", {"Main","Inventory","Lua","Configs"}, nil)
+-- ESC to toggle visibility
+local open = true
+UIS.InputBegan:Connect(function(input, gp)
+	if gp then return end
+	if input.KeyCode == Enum.KeyCode.RightControl or input.KeyCode == Enum.KeyCode.F1 then
+		open = not open
+		main.Visible = open
+	end
+end)
 
-local profile = create("Frame", {BackgroundTransparency=1, Size=UDim2.new(1,0,0,56), Position=UDim2.new(0,0,1,-60), Parent=sidebar})
-local avatar = create("Frame", {BackgroundColor3=Color3.fromRGB(80,90,85), Size=UDim2.fromOffset(40,40), Position=UDim2.fromOffset(0,8), Parent=profile})
-roundify(avatar, 20)
-local pname = Label(profile, "Amiga", 14, T.text, true)
-pname.Position = UDim2.fromOffset(50,8)
-pname.Size = UDim2.new(1,-50,0,20)
-local ptime = Label(profile, "TIE 27.08 24:00", 12, T.muted, false)
-ptime.Position = UDim2.fromOffset(50,28)
-ptime.Size = UDim2.new(1,-50,0,18)
-
--- Content area
-local content = create("Frame", {BackgroundColor3=T.bg, Size=UDim2.new(1,-250,1,0), Position=UDim2.fromOffset(250,0), Parent=root})
-padding(content, 24, 18, 24, 24)
-
--- Top bar
-local topbar = create("Frame", {BackgroundColor3=T.surface, Size=UDim2.new(1,0,0,44), Parent=content})
-roundify(topbar,8)
-stroke(topbar,1,0.85)
-padding(topbar,12,6,12,6)
-
-local saveBtn = create("TextButton", {AutoButtonColor=false, BackgroundColor3=Color3.fromRGB(32,36,34), Size=UDim2.fromOffset(84,32), Text="  Save", Font=Enum.Font.GothamBold, TextSize=14, TextColor3=T.text, Parent=topbar})
-roundify(saveBtn,6)
-stroke(saveBtn,1,0.8)
-local saveDot = create("Frame", {BackgroundColor3=T.accent, Size=UDim2.fromOffset(16,16), Position=UDim2.fromOffset(10,8), Parent=saveBtn})
-roundify(saveDot,8)
-
-local rightIcons = create("Frame", {BackgroundTransparency=1, Size=UDim2.new(0,120,1,0), Position=UDim2.new(1,-120,0,0), Parent=topbar})
-local rlist = list(rightIcons, true, 8)
-for _=1,3 do
-	local ic = create("Frame", {BackgroundColor3=Color3.fromRGB(32,36,34), Size=UDim2.fromOffset(32,32), Parent=rightIcons})
-	roundify(ic,6)
-	stroke(ic,1,0.85)
-	local dot = create("Frame", {BackgroundColor3=T.accent, Size=UDim2.fromOffset(8,8), AnchorPoint=Vector2.new(0.5,0.5), Position=UDim2.fromScale(0.5,0.5), Parent=ic})
-	roundify(dot,4)
-end
-
--- Panels holder
-local panels = create("Frame", {BackgroundTransparency=1, Size=UDim2.new(1,0,1,-64), Position=UDim2.fromOffset(0,56), Parent=content})
-local panelsLayout = create("UIListLayout", {FillDirection=Enum.FillDirection.Horizontal, Padding=UDim.new(0,16), Parent=panels})
-
-local function Panel(title)
-	local p = create("Frame", {BackgroundColor3=T.surface, Size=UDim2.new(0.5,-8,1,0), Parent=panels})
-	roundify(p,10)
-	stroke(p,1,0.85)
-	padding(p,16,16,16,16)
-	SectionTitle(p, title)
-	local body = create("Frame", {BackgroundTransparency=1, Size=UDim2.new(1,0,1,-28), Position=UDim2.fromOffset(0,28), Parent=p})
-	local bodyList = list(body, false, 14)
-	return p, body
-end
-
-local leftPanel, leftBody = Panel("Anti-aimbot angles")
--- Enabled row
-local row1 = create("Frame", {BackgroundTransparency=1, Size=UDim2.new(1,0,0,28), Parent=leftBody})
-local r1label = Label(row1, "Enabled", 14, T.text, false)
-r1label.Size = UDim2.new(1,-86,1,0)
-local t1 = Toggle(row1, true)
-t1.Instance.Position = UDim2.new(1,-62,0,2)
-
--- Grid fields
-local gridL = grid2(leftBody, 12)
-local function Field(name, widget)
-	local f = create("Frame", {BackgroundTransparency=1, Parent=gridL})
-	Label(f, name, 12, T.muted, false).Position = UDim2.fromOffset(0,0)
-	widget.Parent = f
-	widget.Position = UDim2.fromOffset(0,18)
-	widget.Size = UDim2.new(1,0,0,36)
-	return f
-end
-
-Field("Pitch", Dropdown(nil, {"Off","Default","Down"}, 1).Instance)
-Field("Yaw base", Dropdown(nil, {"Local view","At targets"}, 1).Instance)
-Field("Yaw", Dropdown(nil, {"Off","180","Spin"}, 1).Instance)
-Field("Yaw jitter", Dropdown(nil, {"Off","Center","Random"}, 1).Instance)
-Field("Body yaw", Dropdown(nil, {"Off","Opposite","Left","Right"}, 1).Instance)
-Field("Freestanding body yaw", Dropdown(nil, {"On","Off"}, 1).Instance)
-
-local edgeField = create("Frame", {BackgroundTransparency=1, Parent=gridL})
-Label(edgeField, "Edge yaw", 12, T.muted, false)
-local edgeSel = Dropdown(edgeField, {"Freestanding","Off"}, 1)
-edgeSel.Instance.Position = UDim2.fromOffset(0,18)
-edgeSel.Instance.Size = UDim2.new(1,0,0,36)
-
--- Yaw slider row
-local sliderRow = create("Frame", {BackgroundTransparency=1, Size=UDim2.new(1,0,0,56), Parent=leftBody})
-Label(sliderRow, "Yaw", 12, T.muted, false)
-local yawSlider = Slider(sliderRow, 0, 100, 35)
-yawSlider.Instance.Position = UDim2.fromOffset(0,18)
-
--- Right panel
-local rightPanel, rightBody = Panel("Fake lag")
-local row2 = create("Frame", {BackgroundTransparency=1, Size=UDim2.new(1,0,0,28), Parent=rightBody})
-Label(row2, "Enabled", 14, T.text, false).Size = UDim2.new(1,-86,1,0)
-local t2 = Toggle(row2, true)
-t2.Instance.Position = UDim2.new(1,-62,0,2)
-
-local gridR = grid2(rightBody, 12)
-Field = function(name, widget)
-	local f = create("Frame", {BackgroundTransparency=1, Parent=gridR})
-	Label(f, name, 12, T.muted, false)
-	widget.Parent = f
-	widget.Position = UDim2.fromOffset(0,18)
-	widget.Size = UDim2.new(1,0,0,36)
-	return f
-end
-
-Field("Amount", Dropdown(nil, {"Dynamic","Static"}, 1).Instance)
-Field("Variance", Dropdown(nil, {"0","10","25"}, 1).Instance)
-Field("Limit", Dropdown(nil, {"0","2","6","14"}, 1).Instance)
-
-SectionTitle(rightBody, "Other")
-local gridR2 = grid2(rightBody, 12)
-Field = function(name, widget)
-	local f = create("Frame", {BackgroundTransparency=1, Parent=gridR2})
-	Label(f, name, 12, T.muted, false)
-	widget.Parent = f
-	widget.Position = UDim2.fromOffset(0,18)
-	widget.Size = UDim2.new(1,0,0,36)
-	return f
-end
-
-Field("Slow motion", Dropdown(nil, {"Favor high speed","Favor accuracy"}, 1).Instance)
-Field("Leg movement", Dropdown(nil, {"Off","Always slide"}, 1).Instance)
-
-local togglesContainer = create("Frame", {BackgroundTransparency=1, Size=UDim2.new(1,0,0,64), Parent=rightBody})
-local tl = list(togglesContainer, false, 8)
-
-local function ToggleLine(text)
-	local row = create("Frame", {BackgroundTransparency=1, Size=UDim2.new(1,0,0,28), Parent=togglesContainer})
-	Label(row, text, 14, T.text, false)
-	local tg = Toggle(row, false)
-	tg.Instance.Position = UDim2.new(1,-62,0,2)
-	return tg
-end
-
-ToggleLine("On shot anti-aim")
-ToggleLine("Fake peek")
-
--- Done. The UI is created and interactive.
+print("[StepByUI] UI loaded (RightControl or F1 to toggle)")
