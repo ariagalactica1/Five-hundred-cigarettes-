@@ -1,0 +1,230 @@
+-- LocalScript: Automated Mail Delivery with Interactive Console
+-- Place in StarterPlayerScripts
+
+--// Services
+local Players = game:GetService("Players")
+local PathfindingService = game:GetService("PathfindingService")
+local player = Players.LocalPlayer
+local character = player.Character or player.CharacterAdded:Wait()
+local humanoid = character:WaitForChild("Humanoid")
+
+--// SETTINGS
+local HOLD_TIME = 1.5
+local RUNNING = false
+local DESTROYED = false
+
+--// === UI CREATION ===
+local gui = Instance.new("ScreenGui", player:WaitForChild("PlayerGui"))
+gui.Name = "MailDeliveryUI"
+gui.ResetOnSpawn = false
+
+local mainFrame = Instance.new("Frame", gui)
+mainFrame.Size = UDim2.new(0.6, 0, 0.6, 0)
+mainFrame.Position = UDim2.new(0.2, 0, 0.2, 0)
+mainFrame.BackgroundColor3 = Color3.fromRGB(25, 25, 25)
+mainFrame.BorderSizePixel = 0
+
+local left = Instance.new("Frame", mainFrame)
+left.Size = UDim2.new(0.35, 0, 1, 0)
+left.BackgroundColor3 = Color3.fromRGB(35, 35, 35)
+
+local title = Instance.new("TextLabel", left)
+title.Text = "Mail Delivery"
+title.Font = Enum.Font.GothamBold
+title.TextColor3 = Color3.fromRGB(255, 255, 255)
+title.TextScaled = true
+title.Size = UDim2.new(1, 0, 0.15, 0)
+title.BackgroundTransparency = 1
+
+local toggleButton = Instance.new("TextButton", left)
+toggleButton.Text = "▶ Start Script"
+toggleButton.Font = Enum.Font.Gotham
+toggleButton.TextColor3 = Color3.fromRGB(255, 255, 255)
+toggleButton.BackgroundColor3 = Color3.fromRGB(60, 60, 60)
+toggleButton.Size = UDim2.new(0.8, 0, 0.12, 0)
+toggleButton.Position = UDim2.new(0.1, 0, 0.2, 0)
+toggleButton.AutoButtonColor = true
+toggleButton.TextScaled = true
+toggleButton.BorderSizePixel = 0
+
+local right = Instance.new("Frame", mainFrame)
+right.Size = UDim2.new(0.65, 0, 1, 0)
+right.Position = UDim2.new(0.35, 0, 0, 0)
+right.BackgroundColor3 = Color3.fromRGB(20, 20, 20)
+
+local console = Instance.new("ScrollingFrame", right)
+console.Size = UDim2.new(1, -10, 0.9, -10)
+console.Position = UDim2.new(0, 5, 0, 5)
+console.BackgroundTransparency = 1
+console.ScrollBarThickness = 6
+console.AutomaticCanvasSize = Enum.AutomaticSize.Y
+
+local uiList = Instance.new("UIListLayout", console)
+uiList.SortOrder = Enum.SortOrder.LayoutOrder
+
+local inputBox = Instance.new("TextBox", right)
+inputBox.Size = UDim2.new(1, -10, 0.1, -10)
+inputBox.Position = UDim2.new(0, 5, 0.9, 0)
+inputBox.PlaceholderText = "Type a command here (e.g. start, stop, uninject)"
+inputBox.TextColor3 = Color3.fromRGB(255, 255, 255)
+inputBox.BackgroundColor3 = Color3.fromRGB(30, 30, 30)
+inputBox.Font = Enum.Font.Code
+inputBox.TextScaled = true
+inputBox.ClearTextOnFocus = true
+
+--// === LOGGING FUNCTION ===
+local function logMessage(text, color)
+	if DESTROYED then return end
+	local label = Instance.new("TextLabel")
+	label.Text = text
+	label.Font = Enum.Font.Code
+	label.TextSize = 16
+	label.TextXAlignment = Enum.TextXAlignment.Left
+	label.BackgroundTransparency = 1
+	label.TextColor3 = color or Color3.fromRGB(200, 200, 200)
+	label.Size = UDim2.new(1, -10, 0, 20)
+	label.TextWrapped = true
+	label.AutomaticSize = Enum.AutomaticSize.Y
+	label.Parent = console
+	task.wait(0.05)
+	console.CanvasPosition = Vector2.new(0, console.AbsoluteCanvasSize.Y)
+end
+
+--// === HELPER FUNCTIONS ===
+local function getNearestPackage()
+	local nearest, nearestDist
+	for _, pkg in pairs(workspace:GetChildren()) do
+		if pkg.Name == "MailPackage" and pkg:IsA("Model") then
+			local dist = (character:GetPivot().Position - pkg:GetPivot().Position).Magnitude
+			if not nearest or dist < nearestDist then
+				nearest = pkg
+				nearestDist = dist
+			end
+		end
+	end
+	return nearest
+end
+
+local function walkTo(pos)
+	local path = PathfindingService:CreatePath()
+	path:ComputeAsync(character:GetPivot().Position, pos)
+	if path.Status == Enum.PathStatus.Success then
+		for _, wp in ipairs(path:GetWaypoints()) do
+			humanoid:MoveTo(wp.Position)
+			humanoid.MoveToFinished:Wait()
+			task.wait(0.05)
+		end
+	else
+		logMessage("[!] Pathfinding failed", Color3.fromRGB(255, 100, 100))
+	end
+end
+
+--// === DELIVERY LOOP ===
+local function deliverLoop()
+	while RUNNING and not DESTROYED do
+		task.wait(1)
+
+		local package = getNearestPackage()
+		if not package then
+			logMessage("[!] No MailPackage found", Color3.fromRGB(255, 150, 150))
+			task.wait(2)
+			continue
+		end
+
+		logMessage("📦 Delivering package...", Color3.fromRGB(150, 255, 150))
+		walkTo(package:GetPivot().Position)
+
+		local prompt = package:FindFirstChildOfClass("ProximityPrompt")
+		if prompt then
+			fireproximityprompt(prompt, HOLD_TIME)
+		else
+			logMessage("[!] No prompt found on package", Color3.fromRGB(255, 150, 150))
+			continue
+		end
+
+		repeat task.wait(0.2) until player.Backpack:FindFirstChild("MailPackage")
+		local held = player.Backpack.MailPackage
+		local info = held.Handle.InfoUI.TextLabel
+		local deliveryCode = info:GetAttribute("Text")
+
+		if not deliveryCode then
+			logMessage("[!] Invalid delivery code", Color3.fromRGB(255, 100, 100))
+			continue
+		end
+
+		local col = deliveryCode:match("Column(%d+)")
+		local row = deliveryCode:match("Row(%d+)")
+		local column = workspace:FindFirstChild("Column" .. col)
+		if not column then
+			logMessage("[!] Column not found: Column" .. tostring(col), Color3.fromRGB(255, 100, 100))
+			continue
+		end
+
+		local targetRow = column:FindFirstChild("Row" .. row)
+		if not targetRow then
+			logMessage("[!] Row not found: Row" .. tostring(row), Color3.fromRGB(255, 100, 100))
+			continue
+		end
+
+		walkTo(targetRow:GetPivot().Position)
+		local deliverPrompt = targetRow:FindFirstChildOfClass("ProximityPrompt")
+		if deliverPrompt then
+			fireproximityprompt(deliverPrompt, HOLD_TIME)
+			logMessage("✅ Successfully delivered to Column" .. col .. " Row" .. row, Color3.fromRGB(100, 255, 100))
+		else
+			logMessage("[!] No prompt on mailbox", Color3.fromRGB(255, 150, 150))
+		end
+	end
+end
+
+--// === COMMAND HANDLER ===
+local function handleCommand(cmd)
+	cmd = string.lower(cmd)
+
+	if cmd == "start" then
+		if RUNNING then
+			logMessage("[i] Already running.", Color3.fromRGB(255, 255, 150))
+			return
+		end
+		RUNNING = true
+		logMessage("[▶] Script started", Color3.fromRGB(100, 255, 100))
+		task.spawn(deliverLoop)
+
+	elseif cmd == "stop" then
+		if not RUNNING then
+			logMessage("[i] Script is not running.", Color3.fromRGB(255, 255, 150))
+			return
+		end
+		RUNNING = false
+		logMessage("[⏹] Script stopped", Color3.fromRGB(255, 200, 100))
+
+	elseif cmd == "uninject" then
+		RUNNING = false
+		DESTROYED = true
+		gui:Destroy()
+		logMessage = function() end
+		print("[MailDelivery] Script un-injected.")
+	else
+		logMessage("[?] Unknown command: " .. cmd, Color3.fromRGB(255, 150, 150))
+	end
+end
+
+--// === BIND UI EVENTS ===
+toggleButton.MouseButton1Click:Connect(function()
+	if RUNNING then
+		handleCommand("stop")
+	else
+		handleCommand("start")
+	end
+end)
+
+inputBox.FocusLost:Connect(function(enterPressed)
+	if enterPressed and inputBox.Text ~= "" then
+		local cmd = inputBox.Text
+		inputBox.Text = ""
+		handleCommand(cmd)
+	end
+end)
+
+-- Initial log
+logMessage("[MailDelivery] Console ready. Type 'start', 'stop', or 'uninject'.", Color3.fromRGB(200, 200, 255))
