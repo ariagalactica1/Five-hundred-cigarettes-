@@ -1,534 +1,421 @@
---[[
-Gamesense-like Drawing UI Library
-- Client-side / local only (Drawing API)
-- Features:
-  * Window with title / small sidebar
-  * Tabs (easy add)
-  * Buttons, Toggles, Sliders
-  * Resizable (drag lower-right)
-  * Automatic text scaling when window resized
-  * Theme customization (colors provided; matches reference image)
-  * Mouse hover + click interactions
-  * Minimal dependency: Drawing, RunService, UserInputService
---]]
+-- Pixel-Precision GAMESENSE UI (Drawing API)
+-- Client-side only. Paste into your executor / LocalScript environment that exposes Drawing.
+-- Design baseline: 1920x1080. Scales to actual viewport.
 
 local RunService = game:GetService("RunService")
-local UserInputService = game:GetService("UserInputService")
-local HttpService = game:GetService("HttpService")
+local Camera = workspace.CurrentCamera
 
--- Helper: clamp
-local function clamp(v, a, b) if v < a then return a elseif v > b then return b else return v end end
-
--- Helper: make Color3 from hex
-local function hexToColor3(hex)
-    hex = hex:gsub("#","")
-    if #hex == 3 then -- expand shorthand
-        hex = hex:sub(1,1)..hex:sub(1,1) .. hex:sub(2,2)..hex:sub(2,2) .. hex:sub(3,3)..hex:sub(3,3)
-    end
-    local r = tonumber(hex:sub(1,2),16)/255
-    local g = tonumber(hex:sub(3,4),16)/255
-    local b = tonumber(hex:sub(5,6),16)/255
-    return Color3.new(r,g,b)
+-- Check Drawing availability
+local ok, _ = pcall(function() return Drawing end)
+if not ok then
+    warn("Drawing API not available in this environment.")
+    return
 end
 
--- DEFAULT THEME (matched to reference image as closely as possible)
-local DEFAULT_THEME = {
-    Background = hexToColor3("#0f1415"),      -- window background
-    Panel = hexToColor3("#1f2627"),           -- inner panels
-    PanelAccent = hexToColor3("#252a2b"),     -- slightly lighter panel
-    Text = Color3.new(0.94,0.96,0.98),        -- near-white text
-    MutedText = Color3.new(0.75,0.78,0.8),
-    Accent = hexToColor3("#4fe07a"),          -- bright green accent for toggles/sliders
-    SliderFill = hexToColor3("#3bd06b"),
-    Sidebar = hexToColor3("#111618"),
-    Highlight = hexToColor3("#2a2f30"),
+-- Utilities: color conversion
+local function hex(h)
+    h = h:gsub("#","")
+    if #h == 3 then h = h:sub(1,1)..h:sub(1,1)..h:sub(2,2)..h:sub(2,2)..h:sub(3,3)..h:sub(3,3) end
+    return Color3.fromRGB(tonumber(h:sub(1,2),16), tonumber(h:sub(3,4),16), tonumber(h:sub(5,6),16))
+end
+
+-- Theme (matched to screenshot)
+local THEME = {
+    Background = hex("#0f1415"),    -- outer bg
+    Sidebar = hex("#0f1412"),       -- left column
+    SidebarAccent = hex("#0b1112"), -- slightly darker sidebar inner
+    Panel = hex("#161a1b"),         -- inner main background
+    PanelAccent = hex("#1f2627"),   -- inner panel darker
+    Muted = hex("#6f7576"),
+    Text = Color3.fromRGB(234,239,240),
+    Accent = hex("#4fe07a"),        -- neon green
+    DimAccent = hex("#2d7f4a"),
+    Shadow = Color3.fromRGB(0,0,0),
 }
 
--- Drawing helpers
-local DrawingAPI = {}
-function DrawingAPI.newRect()
+-- Baseline and scaling
+local BASE_W, BASE_H = 1920, 1080
+local function getViewport()
+    local v = Camera.ViewportSize
+    return v.X, v.Y
+end
+local function scaleVector(x,y, w,h)
+    local vw, vh = getViewport()
+    return Vector2.new((x / BASE_W) * vw, (y / BASE_H) * vh)
+end
+local function sx(px) return (px / BASE_W) * getViewport() end
+local function sy(px) return (px / BASE_H) * getViewport() end
+
+-- Drawing factories (cached)
+local function newRect()
     local r = Drawing.new("Square")
     r.Filled = true
     r.Transparency = 1
+    r.Visible = true
     r.ZIndex = 1
     return r
 end
-function DrawingAPI.newText()
+local function newText()
     local t = Drawing.new("Text")
-    t.Center = false
-    t.Outline = true
-    t.OutlineColor = Color3.new(0,0,0)
     t.Visible = true
-    t.ZIndex = 2
+    t.Outline = true
+    t.OutlineColor = Color3.fromRGB(0,0,0)
+    t.ZIndex = 3
     return t
 end
-function DrawingAPI.newLine()
+local function newLine()
     local l = Drawing.new("Line")
-    l.Thickness = 1
     l.Visible = true
+    l.Thickness = 1
     l.ZIndex = 2
     return l
 end
-function DrawingAPI.newCircle()
+local function newCircle()
     local c = Drawing.new("Circle")
+    c.Visible = true
     c.Filled = true
     c.NumSides = 100
-    c.Visible = true
     c.ZIndex = 2
     return c
 end
 
--- UI Library root
-local UI = {}
-UI.__index = UI
+-- Helper: rounded rectangle (composed of center rect + 4 corner circles + 4 edge rects)
+local function drawRounded(basePos, baseSize, radius, color, parts)
+    -- parts table holds created pieces to reuse, otherwise create
+    parts = parts or {}
+    parts.center = parts.center or newRect()
+    parts.center.Color = color
+    parts.center.Filled = true
+    parts.center.Transparency = 1
 
-function UI.new(opts)
-    opts = opts or {}
-    local self = setmetatable({}, UI)
+    -- center rectangle (shrunk by radius)
+    parts.center.Position = basePos + Vector2.new(radius, radius)
+    parts.center.Size = Vector2.new(baseSize.X - radius*2, baseSize.Y - radius*2)
 
-    self.theme = opts.theme or DEFAULT_THEME
-    -- default window properties (size/pos scale to screen)
-    local screenW, screenH = workspace.CurrentCamera.ViewportSize.X, workspace.CurrentCamera.ViewportSize.Y
-    self.pos = opts.pos or Vector2.new(60, 40)
-    self.size = opts.size or Vector2.new(820, 520)
-    self.minSize = Vector2.new(520, 340)
-    self.title = opts.title or "GAMESENSE"
-    self.tabs = {}
-    self.activeTab = nil
-    self.dragging = false
-    self.resizing = false
-    self.resizerSize = 18
-    self.mouseDown = false
-    self.inputs = {}
+    -- edges
+    parts.top = parts.top or newRect()
+    parts.bottom = parts.bottom or newRect()
+    parts.left = parts.left or newRect()
+    parts.right = parts.right or newRect()
+    parts.top.Color = color; parts.top.Filled = true
+    parts.bottom.Color = color; parts.bottom.Filled = true
+    parts.left.Color = color; parts.left.Filled = true
+    parts.right.Color = color; parts.right.Filled = true
 
-    -- Drawing elements
-    self.canvas = {}
-    self:_createBaseElements()
-    self:_connectInput()
-    self:_startRender()
+    parts.top.Position = basePos + Vector2.new(radius, 0)
+    parts.top.Size = Vector2.new(baseSize.X - radius*2, radius)
+    parts.bottom.Position = basePos + Vector2.new(radius, baseSize.Y - radius)
+    parts.bottom.Size = Vector2.new(baseSize.X - radius*2, radius)
+    parts.left.Position = basePos + Vector2.new(0, radius)
+    parts.left.Size = Vector2.new(radius, baseSize.Y - radius*2)
+    parts.right.Position = basePos + Vector2.new(baseSize.X - radius, radius)
+    parts.right.Size = Vector2.new(radius, baseSize.Y - radius*2)
 
-    return self
+    -- corners
+    parts.tl = parts.tl or newCircle()
+    parts.tr = parts.tr or newCircle()
+    parts.bl = parts.bl or newCircle()
+    parts.br = parts.br or newCircle()
+    parts.tl.Radius = radius
+    parts.tr.Radius = radius
+    parts.bl.Radius = radius
+    parts.br.Radius = radius
+    parts.tl.Color = color; parts.tr.Color = color; parts.bl.Color = color; parts.br.Color = color
+
+    parts.tl.Position = basePos + Vector2.new(radius, radius)
+    parts.tr.Position = basePos + Vector2.new(baseSize.X - radius, radius)
+    parts.bl.Position = basePos + Vector2.new(radius, baseSize.Y - radius)
+    parts.br.Position = basePos + Vector2.new(baseSize.X - radius, baseSize.Y - radius)
+
+    return parts
 end
 
--- INTERNAL: create base drawing shapes
-function UI:_createBaseElements()
-    -- main window rectangle
-    local bg = DrawingAPI.newRect()
-    bg.Color = self.theme.Background
-    bg.Size = Vector2.new(self.size.X, self.size.Y)
-    bg.Position = Vector2.new(self.pos.X, self.pos.Y)
+-- central store for drawn elements so we can update rather than recreate
+local DRAW = {
+    bg = nil, sidebar = nil, leftInner = nil, mainPanel = nil,
+    titleText = nil, titleAccent = nil,
+    icons = {},
+    tabsText = {},
+    leftBullets = {},
+    profile = nil,
+    contentPanels = {},
+    shadows = {},
+}
+
+-- positions computed from baseline proportions
+local function computeLayout()
+    local vw, vh = getViewport()
+    local scaleX, scaleY = vw / BASE_W, vh / BASE_H
+
+    -- window rectangle: center-ish like screenshot; we position at 120,40 baseline margin
+    local baseX, baseY = 60, 40
+    local baseW, baseH = 900, 540  -- roughly matching screenshot proportions (scaled)
+    local pos = Vector2.new(baseX * scaleX, baseY * scaleY)
+    local size = Vector2.new(baseW * scaleX, baseH * scaleY)
+
+    -- Sidebar width: 180 (baseline)
+    local sidebarW = 180 * scaleX
+    local sidebarPos = pos
+    local sidebarSize = Vector2.new(sidebarW, size.Y)
+
+    -- Content main area pos
+    local contentPos = Vector2.new(pos.X + sidebarW + 20 * scaleX, pos.Y + 22 * scaleY)
+    local contentSize = Vector2.new(size.X - sidebarW - 40 * scaleX, size.Y - 36 * scaleY)
+
+    -- Title positions
+    local titlePos = Vector2.new(pos.X + 12 * scaleX, pos.Y + 6 * scaleY)
+    local iconsBaseX = pos.X + size.X - 48 * scaleX
+    local iconY = pos.Y + 14 * scaleY
+
+    return {
+        windowPos = pos, windowSize = size,
+        sidebarPos = sidebarPos, sidebarSize = sidebarSize,
+        contentPos = contentPos, contentSize = contentSize,
+        titlePos = titlePos, iconsX = iconsBaseX, iconY = iconY
+    }
+end
+
+-- build static shapes (create Drawing objects)
+local function buildShapes()
+    -- background shadow rectangle
+    DRAW.bg = DRAW.bg or newRect()
+    DRAW.sidebar = DRAW.sidebar or newRect()
+    DRAW.leftInner = DRAW.leftInner or newRect()
+    DRAW.mainPanel = DRAW.mainPanel or newRect()
+    DRAW.titleText = DRAW.titleText or newText()
+    DRAW.titleAccent = DRAW.titleAccent or newText()
+    DRAW.saveIcon = DRAW.saveIcon or {bg = newRect(), inner = newRect()}
+    DRAW.gearIcon = DRAW.gearIcon or {ring = newCircle(), teeth = {}}
+    DRAW.searchIcon = DRAW.searchIcon or {lens = newCircle(), handle = newLine()}
+
+    -- create tab texts placeholders (10)
+    for i=1,12 do
+        DRAW.tabsText[i] = DRAW.tabsText[i] or newText()
+        DRAW.leftBullets[i] = DRAW.leftBullets[i] or newCircle()
+    end
+
+    -- small profile bubble
+    DRAW.profile = DRAW.profile or {bg = newCircle(), name = newText(), time = newText()}
+
+    -- content inner panels (3 columns area with multiple rounded rects)
+    for i=1,6 do
+        DRAW.contentPanels[i] = DRAW.contentPanels[i] or {}
+        -- create parts table for rounded rect
+        DRAW.contentPanels[i].parts = DRAW.contentPanels[i].parts or {}
+    end
+end
+
+-- draw icons precisely (save, gear, search)
+local function updateIcons(layout)
+    local iconsX = layout.iconsX
+    local iconY = layout.iconY
+
+    -- save icon (tiny rounded rect with small inner notch)
+    local bg = DRAW.saveIcon.bg
+    local inner = DRAW.saveIcon.inner
+    local w = sx(22); local h = sy(18)
+    bg.Position = Vector2.new(iconsX + sx(24), iconY - sy(6))
+    bg.Size = Vector2.new(w, h)
+    bg.Color = THEME.PanelAccent
     bg.Filled = true
-    bg.Visible = true
-    self.canvas.bg = bg
 
-    -- left sidebar
-    local sidebar = DrawingAPI.newRect()
-    sidebar.Color = self.theme.Sidebar
-    sidebar.Size = Vector2.new(180, self.size.Y)
-    sidebar.Position = Vector2.new(self.pos.X, self.pos.Y)
-    self.canvas.sidebar = sidebar
+    inner.Position = bg.Position + Vector2.new(w*0.12, h*0.18)
+    inner.Size = Vector2.new(w*0.72, h*0.54)
+    inner.Color = THEME.Sidebar
+    inner.Filled = true
 
-    -- content panel
-    local contentPanel = DrawingAPI.newRect()
-    contentPanel.Color = self.theme.Panel
-    contentPanel.Size = Vector2.new(self.size.X - 180 - 20, self.size.Y - 32)
-    contentPanel.Position = Vector2.new(self.pos.X + 180 + 12, self.pos.Y + 22)
-    self.canvas.content = contentPanel
+    -- gear icon: ring + teeth (draw using small lines around a circle)
+    local gear = DRAW.gearIcon
+    local cx = iconsX + sx(6)
+    gear.ring.Position = Vector2.new(cx, iconY)
+    gear.ring.Radius = math.min(sy(6), sx(6))
+    gear.ring.Color = THEME.PanelAccent
+    gear.ring.Filled = false
+    gear.ring.Thickness = 2
 
-    -- Top bar text (title)
-    local titleText = DrawingAPI.newText()
-    titleText.Text = self.title
-    titleText.Size = 24
-    titleText.Position = Vector2.new(self.pos.X + 12, self.pos.Y + 8)
-    titleText.Color = self.theme.Text
-    titleText.Visible = true
-    self.canvas.title = titleText
-
-    -- Save/gear small icons (simple circles representing icons)
-    local smallCircle = DrawingAPI.newCircle()
-    smallCircle.Position = Vector2.new(self.pos.X + self.size.X - 24, self.pos.Y + 14)
-    smallCircle.Radius = 8
-    smallCircle.Color = self.theme.PanelAccent
-    self.canvas.saveIcon = smallCircle
-
-    local gearCircle = DrawingAPI.newCircle()
-    gearCircle.Position = Vector2.new(self.pos.X + self.size.X - 46, self.pos.Y + 14)
-    gearCircle.Radius = 8
-    gearCircle.Color = self.theme.PanelAccent
-    self.canvas.gearIcon = gearCircle
-
-    -- Tab list container (draw tab names on sidebar)
-    self.canvas.tabTexts = {}
-
-    -- content items per-tab are stored in tab.children
-end
-
--- create tab, returns tab object
-function UI:CreateTab(name)
-    local tab = {name = name, children = {}, id = HttpService:GenerateGUID(false)}
-    table.insert(self.tabs, tab)
-    if not self.activeTab then
-        self.activeTab = tab
+    -- create 6 small teeth lines radiating
+    while #gear.teeth < 6 do
+        table.insert(gear.teeth, newLine())
     end
-    return setmetatable(tab, {
-        __index = {
-            AddButton = function(selfTab, label, callback)
-                table.insert(selfTab.children, {type="button", label=label, cb=callback, id=HttpService:GenerateGUID(false)})
-                return selfTab
-            end,
-            AddToggle = function(selfTab, label, default, callback)
-                table.insert(selfTab.children, {type="toggle", label=label, state=default and true or false, cb=callback, id=HttpService:GenerateGUID(false)})
-                return selfTab
-            end,
-            AddSlider = function(selfTab, label, min, max, default, callback)
-                table.insert(selfTab.children, {type="slider", label=label, min=min, max=max, value=default, cb=callback, id=HttpService:GenerateGUID(false)})
-                return selfTab
-            end,
-        }
-    })
+    local teethCount = 6
+    for i=1,teethCount do
+        local angle = (i-1) * (2*math.pi/teethCount)
+        local outer = Vector2.new(cx + math.cos(angle) * gear.ring.Radius*1.6, iconY + math.sin(angle) * gear.ring.Radius*1.6)
+        local inner = Vector2.new(cx + math.cos(angle) * gear.ring.Radius*0.9, iconY + math.sin(angle) * gear.ring.Radius*0.9)
+        local ln = gear.teeth[i]
+        ln.From = inner
+        ln.To = outer
+        ln.Color = THEME.PanelAccent
+        ln.Thickness = 2
+    end
+
+    -- search icon: lens + handle
+    local lens = DRAW.searchIcon.lens
+    local hline = DRAW.searchIcon.handle
+    local lx = iconsX + sx(46)
+    lens.Position = Vector2.new(lx, iconY)
+    lens.Radius = math.min(sy(6), sx(6))
+    lens.Color = THEME.PanelAccent
+    lens.Filled = false
+    lens.Thickness = 2
+
+    local handleStart = Vector2.new(lx + lens.Radius*0.7, iconY + lens.Radius*0.7)
+    local handleEnd = Vector2.new(handleStart.X + sx(8), handleStart.Y + sy(8))
+    hline.From = handleStart
+    hline.To = handleEnd
+    hline.Color = THEME.PanelAccent
+    hline.Thickness = 2
 end
 
--- Switch active tab by index or name
-function UI:SetActiveTab(idOrName)
-    for _,t in ipairs(self.tabs) do
-        if t.id == idOrName or t.name == idOrName then
-            self.activeTab = t
-            break
-        end
+-- top-left title: "GAMESENSE" with "SENSE" in accent color
+local function updateTitle(layout)
+    local t = DRAW.titleText
+    local a = DRAW.titleAccent
+    local pos = layout.titlePos
+    t.Position = pos
+    t.Color = THEME.Text
+    t.Size = math.floor(sy(22))
+    t.Font = 3
+    t.Text = "GAMES"
+    t.Outline = true
+    t.OutlineColor = Color3.new(0,0,0)
+
+    a.Position = Vector2.new(pos.X + sx(58), pos.Y) -- offset to draw "SENSE" after "GAMES"
+    a.Color = THEME.Accent
+    a.Size = math.floor(sy(22))
+    a.Font = 3
+    a.Text = "ENSE"
+    a.Outline = true
+    a.OutlineColor = Color3.new(0,0,0)
+end
+
+-- draw left sidebar items ("Lorem Ipsum" placeholders + bullet icons)
+local function updateSidebar(layout)
+    local sPos, sSize = layout.sidebarPos, layout.sidebarSize
+    DRAW.sidebar.Position = sPos
+    DRAW.sidebar.Size = sSize
+    DRAW.sidebar.Color = THEME.Sidebar
+    DRAW.sidebar.Filled = true
+
+    -- left inner subtle gradient panel
+    DRAW.leftInner.Position = sPos + Vector2.new(sx(8), sy(8))
+    DRAW.leftInner.Size = Vector2.new(sSize.X - sx(16), sSize.Y - sy(16))
+    DRAW.leftInner.Color = THEME.SidebarAccent
+    DRAW.leftInner.Filled = true
+
+    -- populate 10 placeholder labels
+    local startY = sPos.Y + sy(80)
+    local spacing = sy(36)
+    for i=1,10 do
+        local txt = DRAW.tabsText[i]
+        txt.Text = "Lorem Ipsum"
+        txt.Font = 3
+        txt.Size = math.floor(sy(16))
+        txt.Color = (i==2) and THEME.Accent or THEME.Text -- highlight second item like screenshot
+        txt.Position = Vector2.new(sPos.X + sx(36), startY + (i-1)*spacing)
+
+        -- left bullet icon (small green/or white)
+        local bullet = DRAW.leftBullets[i]
+        bullet.Position = Vector2.new(sPos.X + sx(18), startY + (i-1)*spacing + sy(6))
+        bullet.Radius = math.max(4, math.floor(sy(4)))
+        bullet.Color = (i==2) and THEME.Accent or THEME.Muted
+        bullet.Filled = true
+    end
+
+    -- bottom profile bubble (avatar)
+    local pb = DRAW.profile
+    local avatarCenter = Vector2.new(sPos.X + sx(40), sPos.Y + sSize.Y - sy(60))
+    pb.bg.Position = avatarCenter
+    pb.bg.Radius = math.max(18, math.floor(sy(18)))
+    pb.bg.Color = THEME.PanelAccent
+    pb.bg.Filled = true
+
+    pb.name.Text = "Amiqa"
+    pb.name.Position = Vector2.new(avatarCenter.X + sx(42), avatarCenter.Y - sy(6))
+    pb.name.Size = math.floor(sy(13))
+    pb.name.Color = THEME.Text
+    pb.time.Text = "TT: 27 08 24:00"
+    pb.time.Position = Vector2.new(avatarCenter.X + sx(42), avatarCenter.Y + sy(8))
+    pb.time.Size = math.floor(sy(11))
+    pb.time.Color = THEME.Muted
+end
+
+-- content main area panels (visual only)
+local function updateContent(layout)
+    local cPos, cSize = layout.contentPos, layout.contentSize
+    DRAW.mainPanel.Position = cPos - Vector2.new(sx(6), sy(6))
+    DRAW.mainPanel.Size = cSize + Vector2.new(sx(12), sy(12))
+    DRAW.mainPanel.Color = THEME.Panel
+    DRAW.mainPanel.Filled = true
+
+    -- draw several inner rounded panels (mimic left and right columns from screenshot)
+    -- For visual parity we'll create three large columns / modules
+    local colW = (cSize.X - sx(24)) / 2
+    local leftColX = cPos.X
+    local rightColX = cPos.X + colW + sx(24)
+    local topY = cPos.Y
+
+    local panels = {
+        {x = leftColX, y = topY, w = colW, h = sy(280)},
+        {x = rightColX, y = topY, w = colW, h = sy(280)},
+        {x = leftColX, y = topY + sy(300), w = colW*2 + sx(24), h = sy(160)}
+    }
+
+    for i,p in ipairs(panels) do
+        local basePos = Vector2.new(p.x, p.y)
+        local baseSize = Vector2.new(p.w, p.h)
+        local parts = DRAW.contentPanels[i].parts
+        parts = drawRounded(basePos, baseSize, math.max(8, math.floor(sy(8))), THEME.PanelAccent, parts)
+        DRAW.contentPanels[i].parts = parts
+
+        -- subtle inner highlight stripe
+        parts.top.Highlight = parts.top.Highlight or newRect()
+        parts.top.Highlight.Position = parts.center.Position + Vector2.new(0, -sy(6))
+        parts.top.Highlight.Size = Vector2.new(parts.center.Size.X, sy(6))
+        parts.top.Highlight.Color = Color3.fromRGB(20,20,20)
+        parts.top.Highlight.Filled = true
+        parts.top.Highlight.Transparency = 0.6
+
+        -- section title
+        parts.title = parts.title or newText()
+        parts.title.Text = (i==1 and "Anti-aimbot angles") or (i==2 and "Fake lag") or "Other"
+        parts.title.Font = 3
+        parts.title.Size = math.floor(sy(14))
+        parts.title.Color = THEME.Text
+        parts.title.Position = parts.center.Position + Vector2.new(sx(10), sy(-8))
     end
 end
 
--- Theme change
-function UI:SetTheme(tbl)
-    for k,v in pairs(tbl) do
-        if self.theme[k] ~= nil then
-            self.theme[k] = v
-        end
-    end
-    -- apply basic color updates
-    self.canvas.bg.Color = self.theme.Background
-    self.canvas.sidebar.Color = self.theme.Sidebar
-    self.canvas.content.Color = self.theme.Panel
-    self.canvas.title.Color = self.theme.Text
-    self.canvas.saveIcon.Color = self.theme.PanelAccent
-    self.canvas.gearIcon.Color = self.theme.PanelAccent
-end
+-- full update pass
+local function updateAll()
+    local layout = computeLayout()
+    buildShapes()
+    updateTitle(layout)
+    updateIcons(layout)
+    updateSidebar(layout)
+    updateContent(layout)
 
--- Input handlers
-function UI:_connectInput()
-    local mousePos = Vector2.new(0,0)
-    UserInputService.InputBegan:Connect(function(input, processed)
-        if processed then return end
-        if input.UserInputType == Enum.UserInputType.MouseButton1 then
-            self.mouseDown = true
-            local mpos = UserInputService:GetMouseLocation()
-            mousePos = Vector2.new(mpos.X, mpos.Y)
-            -- check if clicked in header area to start dragging
-            if self:_pointInRect(mousePos, self.pos + Vector2.new(0,0), Vector2.new(self.size.X, 28)) then
-                self.dragging = true
-                self.dragOffset = mousePos - self.pos
+    -- ensure visibility
+    for k,v in pairs(DRAW) do
+        if type(v) == "table" then
+            for kk,vv in pairs(v) do
+                if vv and vv.Visible ~= nil then vv.Visible = true end
             end
-            -- check if clicked in resizer area
-            local resPos = self.pos + self.size - Vector2.new(self.resizerSize, self.resizerSize)
-            if self:_pointInRect(mousePos, resPos, Vector2.new(self.resizerSize, self.resizerSize)) then
-                self.resizing = true
-                self.resizeStart = mousePos
-                self.startSize = self.size
-            end
-
-            -- click interactions for sidebar items / controls
-            self:_handleClick(mousePos)
-        end
-    end)
-    UserInputService.InputEnded:Connect(function(input, processed)
-        if input.UserInputType == Enum.UserInputType.MouseButton1 then
-            self.mouseDown = false
-            self.dragging = false
-            self.resizing = false
-        end
-    end)
-    UserInputService.InputChanged:Connect(function(input)
-        if input.UserInputType == Enum.UserInputType.MouseMovement then
-            local m = UserInputService:GetMouseLocation()
-            local mp = Vector2.new(m.X, m.Y)
-            if self.dragging then
-                self.pos = mp - self.dragOffset
-            elseif self.resizing then
-                local delta = mp - self.resizeStart
-                local newSize = self.startSize + Vector2.new(delta.X, delta.Y)
-                newSize = Vector2.new(math.max(self.minSize.X, newSize.X), math.max(self.minSize.Y, newSize.Y))
-                self.size = newSize
-            end
-        end
-    end)
-end
-
--- check point in rect
-function UI:_pointInRect(pt, rectPos, rectSize)
-    return pt.X >= rectPos.X and pt.Y >= rectPos.Y and pt.X <= rectPos.X + rectSize.X and pt.Y <= rectPos.Y + rectSize.Y
-end
-
--- handle clicks for sidebar and controls
-function UI:_handleClick(mousePos)
-    -- check tabs on sidebar
-    local sidebarX = self.pos.X
-    local sidebarY = self.pos.Y + 40
-    local tabHeight = 28
-    for i,tab in ipairs(self.tabs) do
-        local tPos = Vector2.new(sidebarX + 12, sidebarY + (i-1) * (tabHeight + 8))
-        local tSize = Vector2.new(160, tabHeight)
-        if self:_pointInRect(mousePos, tPos, tSize) then
-            self.activeTab = tab
-            return
-        end
-    end
-
-    -- check content controls
-    if not self.activeTab then return end
-    local contentStart = Vector2.new(self.pos.X + 200, self.pos.Y + 34)
-    local cursor = Vector2.new(contentStart.X, contentStart.Y)
-    local spacing = 32
-    for _,item in ipairs(self.activeTab.children) do
-        if item.type == "button" then
-            local bPos = cursor
-            local bSize = Vector2.new(220, 26)
-            if self:_pointInRect(mousePos, bPos, bSize) then
-                if item.cb then
-                    local success,err = pcall(function() item.cb() end)
-                    if not success then warn("Button callback error:",err) end
-                end
-                return
-            end
-            cursor = cursor + Vector2.new(0, spacing)
-        elseif item.type == "toggle" then
-            local tPos = cursor
-            local tSize = Vector2.new(220, 20)
-            -- toggle area on the right
-            local toggleRect = Vector2.new(self.pos.X + self.size.X - 160, tPos.Y - 6)
-            local toggleSize = Vector2.new(36, 16)
-            if self:_pointInRect(mousePos, toggleRect, toggleSize) then
-                item.state = not item.state
-                if item.cb then
-                    pcall(item.cb, item.state)
-                end
-                return
-            end
-            cursor = cursor + Vector2.new(0, spacing)
-        elseif item.type == "slider" then
-            local sPos = cursor
-            local sSize = Vector2.new(320, 22)
-            local sliderRect = Vector2.new(sPos.X + 8, sPos.Y + 6)
-            local sliderSize = Vector2.new(260, 10)
-            if self:_pointInRect(mousePos, sliderRect, sliderSize) then
-                local rel = (mousePos.X - sliderRect.X) / sliderSize.X
-                rel = clamp(rel, 0, 1)
-                local newVal = item.min + (item.max - item.min) * rel
-                item.value = newVal
-                if item.cb then pcall(item.cb, newVal) end
-                return
-            end
-            cursor = cursor + Vector2.new(0, spacing)
+        elseif v and v.Visible ~= nil then
+            v.Visible = true
         end
     end
 end
 
--- Render loop
-function UI:_startRender()
-    RunService.RenderStepped:Connect(function()
-        self:_render()
-    end)
-end
-
--- internal render
-function UI:_render()
-    -- update main rects pos/size
-    self.canvas.bg.Position = self.pos
-    self.canvas.bg.Size = self.size
-
-    self.canvas.sidebar.Position = self.pos
-    self.canvas.sidebar.Size = Vector2.new(180, self.size.Y)
-
-    self.canvas.title.Position = Vector2.new(self.pos.X + 12, self.pos.Y + 6)
-
-    self.canvas.saveIcon.Position = Vector2.new(self.pos.X + self.size.X - 24, self.pos.Y + 14)
-    self.canvas.gearIcon.Position = Vector2.new(self.pos.X + self.size.X - 46, self.pos.Y + 14)
-
-    self.canvas.content.Position = Vector2.new(self.pos.X + 200, self.pos.Y + 30)
-    self.canvas.content.Size = Vector2.new(self.size.X - 220, self.size.Y - 44)
-
-    -- sidebar tabs
-    for i,tab in ipairs(self.tabs) do
-        local txt = self.canvas.tabTexts[i]
-        local textPos = Vector2.new(self.pos.X + 12, self.pos.Y + 40 + (i-1)*36)
-        if not txt then
-            txt = DrawingAPI.newText()
-            txt.Font = 3 -- UI font style
-            self.canvas.tabTexts[i] = txt
-        end
-        txt.Text = tab.name
-        txt.Position = textPos
-        txt.Size = 20
-        txt.Color = (tab == self.activeTab) and self.theme.Accent or self.theme.Text
+-- watch for viewport changes and update once initially
+local lastW, lastH = getViewport()
+updateAll()
+RunService.RenderStepped:Connect(function()
+    local w,h = getViewport()
+    if w ~= lastW or h ~= lastH then
+        lastW, lastH = w,h
+        updateAll()
     end
+end)
 
-    -- draw content for active tab
-    if self.activeTab then
-        -- We'll render each child sequentially
-        local start = Vector2.new(self.pos.X + 212, self.pos.Y + 44)
-        local cursor = start
-        local spacing = 36
-        for _,item in ipairs(self.activeTab.children) do
-            if item.type == "button" then
-                -- background rect (button)
-                if not item._rect then
-                    item._rect = DrawingAPI.newRect()
-                end
-                local rect = item._rect
-                rect.Position = cursor
-                rect.Size = Vector2.new(220, 26)
-                rect.Color = self.theme.PanelAccent
-                rect.Transparency = 1
-                rect.Filled = true
-                rect.Visible = true
-
-                -- text
-                if not item._text then
-                    item._text = DrawingAPI.newText()
-                end
-                item._text.Text = item.label
-                item._text.Position = cursor + Vector2.new(8, 3)
-                item._text.Size = 16
-                item._text.Color = self.theme.Text
-
-                cursor = cursor + Vector2.new(0, spacing)
-            elseif item.type == "toggle" then
-                -- label
-                if not item._text then
-                    item._text = DrawingAPI.newText()
-                end
-                item._text.Text = item.label
-                item._text.Position = cursor + Vector2.new(0, 0)
-                item._text.Size = 16
-                item._text.Color = self.theme.Text
-
-                -- toggle box (right side)
-                if not item._box then
-                    item._box = DrawingAPI.newRect()
-                    item._dot = DrawingAPI.newCircle()
-                end
-                local boxPos = Vector2.new(self.pos.X + self.size.X - 160, cursor.Y - 6)
-                item._box.Position = boxPos
-                item._box.Size = Vector2.new(36, 16)
-                item._box.Color = item.state and self.theme.Accent or self.theme.Highlight
-                item._box.Filled = true
-
-                item._dot.Position = Vector2.new(boxPos.X + (item.state and 24 or 12), boxPos.Y + 8)
-                item._dot.Radius = 6
-                item._dot.Color = Color3.new(1,1,1)
-
-                cursor = cursor + Vector2.new(0, spacing)
-            elseif item.type == "slider" then
-                -- label
-                if not item._text then
-                    item._text = DrawingAPI.newText()
-                end
-                item._text.Text = string.format("%s: %0.2f", item.label, tonumber(item.value) or 0)
-                item._text.Position = cursor + Vector2.new(0, -2)
-                item._text.Size = 16
-                item._text.Color = self.theme.Text
-
-                -- slider bar
-                if not item._bar then
-                    item._bar = DrawingAPI.newRect()
-                    item._fill = DrawingAPI.newRect()
-                    item._knob = DrawingAPI.newCircle()
-                end
-                local barPos = Vector2.new(cursor.X + 8, cursor.Y + 18)
-                local barSize = Vector2.new(260, 8)
-                item._bar.Position = barPos
-                item._bar.Size = barSize
-                item._bar.Color = self.theme.Highlight
-                item._bar.Filled = true
-
-                local t = (item.value - item.min) / (item.max - item.min)
-                t = clamp(t, 0, 1)
-                item._fill.Position = barPos
-                item._fill.Size = Vector2.new(math.max(6, barSize.X * t), barSize.Y)
-                item._fill.Color = self.theme.SliderFill
-                item._fill.Filled = true
-
-                item._knob.Position = Vector2.new(barPos.X + barSize.X * t, barPos.Y + barSize.Y/2)
-                item._knob.Radius = 7
-                item._knob.Color = self.theme.Accent
-
-                cursor = cursor + Vector2.new(0, spacing)
-            end
-        end
-    end
-
-    -- resizer visual
-    local resPos = self.pos + self.size - Vector2.new(self.resizerSize, self.resizerSize)
-    if not self.canvas.resizer then
-        self.canvas.resizer = DrawingAPI.newLine()
-        self.canvas.resizer2 = DrawingAPI.newLine()
-        self.canvas.resizer3 = DrawingAPI.newLine()
-    end
-    local lineOffset = 5
-    self.canvas.resizer.From = Vector2.new(resPos.X + lineOffset, resPos.Y + self.resizerSize - 4)
-    self.canvas.resizer.To = Vector2.new(resPos.X + self.resizerSize - 4, resPos.Y + lineOffset)
-    self.canvas.resizer.Color = self.theme.PanelAccent
-    self.canvas.resizer.Thickness = 2
-
-    -- small diagonal lines to imply resizer
-    self.canvas.resizer2.From = Vector2.new(resPos.X + lineOffset + 6, resPos.Y + self.resizerSize - 4)
-    self.canvas.resizer2.To = Vector2.new(resPos.X + self.resizerSize - 4, resPos.Y + lineOffset + 6)
-    self.canvas.resizer2.Color = self.theme.PanelAccent
-    self.canvas.resizer2.Thickness = 2
-
-    -- bring important visuals to visible
-    self.canvas.bg.Visible = true
-    self.canvas.sidebar.Visible = true
-    self.canvas.content.Visible = true
-    self.canvas.title.Visible = true
-    self.canvas.saveIcon.Visible = true
-    self.canvas.gearIcon.Visible = true
-end
-
--- Example builder (recreate a similar layout to the screenshot)
--- You can call these in your script after creating the UI to populate tabs.
-function UI:PopulateExample()
-    local main = self:CreateTab("Main")
-    main:AddToggle("Enabled", true, function(state) print("Enabled:",state) end)
-    main:AddToggle("Fake lag", false, function(v) print("Fake lag:",v) end)
-    main:AddSlider("Edge yaw", 0, 360, 60, function(v) end)
-    main:AddButton("Save", function() print("Save button pressed") end)
-
-    local misc = self:CreateTab("Misc")
-    misc:AddToggle("Slow motion", false, function(v) end)
-    misc:AddSlider("Amount", 0, 100, 30, function(v) end)
-    misc:AddButton("Apply", function() print("Apply pressed") end)
-
-    local lua = self:CreateTab("Lua")
-    lua:AddButton("Open Script Folder", function() print("open scripts") end)
-end
-
--- Usage:
--- local lib = require(...) or loadstring(...) -> UI.new()
--- Example below:
-
--- return UI as module-like
-local module = {}
-module.new = function(opts)
-    return UI.new(opts)
-end
-
--- If this file is run directly: spawn an instance for demonstration
--- (This allows copy/paste usage - remove the demo if integrating into a module)
-do
-    local lib = UI.new({title = "GAMESENSE", pos = Vector2.new(60,40), size = Vector2.new(900,540)})
-    lib:PopulateExample()
-    -- Optional: expose instance to global for debugging
-    _G.GamesenseUI = lib
-end
-
-return module
+-- end of file
