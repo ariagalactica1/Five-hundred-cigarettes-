@@ -1,741 +1,915 @@
--- stepby.lua - Local-sided UI inspired by the provided Gamesense panel
--- Place this file in a LocalScript (e.g., StarterPlayerScripts) to run on the client
+-- LocalScript: Recreate HTML Menu in Roblox GUI
+-- Define theme colors (from CSS variables) using Color3.fromRGB
+local COLORS = {
+    BG_MAIN       = Color3.fromRGB(30, 30, 46),   -- --bg-main (#1e1e2e):contentReference[oaicite:44]{index=44}
+    BG_SIDEBAR    = Color3.fromRGB(26, 27, 38),   -- --bg-sidebar (#1a1b26)
+    BG_INPUT      = Color3.fromRGB(42, 46, 62),   -- --bg-input (#2a2e3e)
+    BORDER        = Color3.fromRGB(65, 72, 104),  -- --border-color (#414868)
+    TEXT_PRIMARY  = Color3.fromRGB(192, 202, 245),-- --text-primary (#c0caf5)
+    TEXT_SECONDARY= Color3.fromRGB(169, 177, 214),-- --text-secondary (#a9b1d6)
+    ACCENT_PRIMARY= Color3.fromRGB(122, 162, 247),-- --accent-primary (#7aa2f7)
+    ACCENT_SECOND = Color3.fromRGB(247, 118, 142),-- --accent-secondary (#f7768e)
+    ACCENT_GREEN  = Color3.fromRGB(158, 206, 106) -- --accent-green (#9ece6a)
+}
+-- Load Inter font (asset from Roblox Marketplace) for use in TextLabels/Buttons
+local interFontId = 12187365364  -- Asset ID for "Inter" font:contentReference[oaicite:45]{index=45}
+local fontInter    = Font.fromId(interFontId)  -- default weight (Regular)
+local fontInterBold= Font.new("rbxassetid://"..interFontId, Enum.FontWeight.Bold)  -- Bold weight
 
--- Wait for game
-if not game:IsLoaded() then game.Loaded:Wait() end
-
+-- Create ScreenGui
 local Players = game:GetService("Players")
-local UIS = game:GetService("UserInputService")
-local RunService = game:GetService("RunService")
-local TweenService = game:GetService("TweenService")
+local player = Players.LocalPlayer
+local playerGui = player:WaitForChild("PlayerGui")
+local screenGui = Instance.new("ScreenGui")
+screenGui.Name = "SettingsMenuGui"
+screenGui.IgnoreGuiInset = true  -- use full screen without offset
+screenGui.ResetOnSpawn = false
+screenGui.Parent = playerGui
 
-local localPlayer = Players.LocalPlayer
-local playerGui = localPlayer:WaitForChild("PlayerGui")
+-- Main Panel Frame (modal container)
+local panel = Instance.new("Frame")
+panel.Name = "SettingsPanel"
+panel.BackgroundColor3 = COLORS.BG_MAIN
+panel.BorderSizePixel = 0
+panel.AnchorPoint = Vector2.new(0.5, 0.5)
+panel.Position = UDim2.new(0.5, 0, 0.5, 0)
+panel.Size = UDim2.new(0.95, 0, 0.9, 0)  -- start at 95% width, 90% height
+-- Constrain panel to max 900x700 pixels
+local panelSizeConstraint = Instance.new("UISizeConstraint")
+panelSizeConstraint.MaxSize = Vector2.new(900, 700)
+panelSizeConstraint.Parent = panel
+-- Rounded corners (12px radius)
+local panelCorner = Instance.new("UICorner")
+panelCorner.CornerRadius = UDim.new(0, 12)
+panelCorner.Parent = panel
+panel.Parent = screenGui
 
--- Remove previous instances if re-run
-local existing = playerGui:FindFirstChild("StepByUI")
-if existing then existing:Destroy() end
+-- Panel Header
+local header = Instance.new("Frame")
+header.Name = "PanelHeader"
+header.BackgroundColor3 = COLORS.BG_SIDEBAR
+header.BorderSizePixel = 0
+header.Size = UDim2.new(1, 0, 0, 50)  -- full width, 50px tall
+header.Position = UDim2.new(0, 0, 0, 0)
+header.Parent = panel
+-- Bottom border line (1px)
+local headerBorder = Instance.new("Frame")
+headerBorder.BackgroundColor3 = COLORS.BORDER
+headerBorder.BorderSizePixel = 0
+headerBorder.Size = UDim2.new(1, 0, 0, 1)
+headerBorder.Position = UDim2.new(0, 0, 1, 0)  -- anchored to bottom of header
+headerBorder.Parent = header
+-- Header Title
+local titleLabel = Instance.new("TextLabel")
+titleLabel.Name = "Title"
+titleLabel.BackgroundTransparency = 1
+titleLabel.Position = UDim2.new(0, 20, 0.5, 0)  -- 20px from left, vertically centered
+titleLabel.AnchorPoint = Vector2.new(0, 0.5)
+titleLabel.FontFace = fontInterBold
+titleLabel.Text = "Settings Panel"
+titleLabel.TextColor3 = COLORS.TEXT_PRIMARY
+titleLabel.TextSize = 18  -- ~1.2em
+titleLabel.Parent = header
 
--- THEME
-local theme = {
-	bg = Color3.fromRGB(18, 19, 22), -- main darker
-	panel = Color3.fromRGB(26, 27, 31), -- general dark panel
-	subtle = Color3.fromRGB(34, 36, 42), -- outlines / separators
-	stroke = Color3.fromRGB(48, 50, 58),
-	accent = Color3.fromRGB(92, 214, 103),
-	accentDim = Color3.fromRGB(62, 160, 78),
-	text = Color3.fromRGB(235, 235, 245),
-	muted = Color3.fromRGB(160, 164, 175),
-	shadow = Color3.fromRGB(0, 0, 0),
-	red = Color3.fromRGB(255, 95, 95),
-	-- sidebar greenish tint for a closer match
-	side_g1 = Color3.fromRGB(35, 42, 38),
-	side_g2 = Color3.fromRGB(28, 32, 30),
-}
+-- Header Controls (container for toggle & dropdown in header)
+local headerControls = Instance.new("Frame")
+headerControls.Name = "HeaderControls"
+headerControls.BackgroundTransparency = 1
+headerControls.AnchorPoint = Vector2.new(1, 0.5)
+headerControls.Position = UDim2.new(1, -20, 0.5, 0)  -- 20px from right, centered vertically
+headerControls.Size = UDim2.new(0, 0, 1, 0)  -- width will auto-fit children, height same as header
+headerControls.AutomaticSize = Enum.AutomaticSize.X  -- auto width
+headerControls.Parent = header
+local controlsLayout = Instance.new("UIListLayout")
+controlsLayout.FillDirection = Enum.FillDirection.Horizontal
+controlsLayout.HorizontalAlignment = Enum.HorizontalAlignment.Right
+controlsLayout.VerticalAlignment = Enum.VerticalAlignment.Center
+controlsLayout.Padding = UDim.new(0, 20)  -- 20px gap between controls
+controlsLayout.Parent = headerControls
 
--- UTIL
-local function round(gui, r)
-	local c = Instance.new("UICorner")
-	c.CornerRadius = UDim.new(0, r or 6)
-	c.Parent = gui
-	return c
+-- Header "Mode" dropdown label and button
+local modeControl = Instance.new("Frame")
+modeControl.Name = "ModeControl"
+modeControl.BackgroundTransparency = 1
+modeControl.AutomaticSize = Enum.AutomaticSize.XY
+modeControl.Parent = headerControls
+local modeLayout = Instance.new("UIListLayout")
+modeLayout.FillDirection = Enum.FillDirection.Horizontal
+modeLayout.VerticalAlignment = Enum.VerticalAlignment.Center
+modeLayout.Parent = modeControl
+-- Label
+local modeLabel = Instance.new("TextLabel")
+modeLabel.BackgroundTransparency = 1
+modeLabel.FontFace = fontInter
+modeLabel.Text = "Mode:"
+modeLabel.TextColor3 = COLORS.TEXT_SECONDARY
+modeLabel.TextSize = 14
+modeLabel.Parent = modeControl
+-- Dropdown button
+local modeDropdown = Instance.new("TextButton")
+modeDropdown.Name = "ModeDropdown"
+modeDropdown.AutoButtonColor = false  -- we'll handle hover color
+modeDropdown.FontFace = fontInter
+modeDropdown.Text = "Stable Diffusion  ▼"  -- default option with arrow
+modeDropdown.TextColor3 = COLORS.TEXT_PRIMARY
+modeDropdown.TextSize = 14
+modeDropdown.BackgroundColor3 = COLORS.BG_INPUT
+modeDropdown.Size = UDim2.new(0, 0, 0, 32)
+modeDropdown.AutomaticSize = Enum.AutomaticSize.X  -- width grows to text + padding
+-- Style the dropdown button with padding and border
+local ddPadding = Instance.new("UIPadding")
+ddPadding.PaddingLeft = UDim.new(0, 10)
+ddPadding.PaddingRight = UDim.new(0, 30)  -- extra right padding for arrow icon spacing
+ddPadding.PaddingTop = UDim.new(0, 6)
+ddPadding.PaddingBottom = UDim.new(0, 6)
+ddPadding.Parent = modeDropdown
+local ddCorner = Instance.new("UICorner")
+ddCorner.CornerRadius = UDim.new(0, 5)
+ddCorner.Parent = modeDropdown
+local ddStroke = Instance.new("UIStroke")
+ddStroke.Color = COLORS.BORDER
+ddStroke.Thickness = 1
+ddStroke.Parent = modeDropdown
+modeDropdown.Parent = modeControl
+
+-- Dropdown options list (initially hidden)
+local modeOptionsFrame = Instance.new("Frame")
+modeOptionsFrame.Name = "ModeOptions"
+modeOptionsFrame.BackgroundColor3 = COLORS.BG_INPUT
+modeOptionsFrame.BorderSizePixel = 0
+modeOptionsFrame.Visible = false
+-- We'll position this frame dynamically when showing, relative to modeDropdown's absolute position
+local optionsCorner = Instance.new("UICorner")
+optionsCorner.CornerRadius = UDim.new(0, 5)
+optionsCorner.Parent = modeOptionsFrame
+local optionsStroke = Instance.new("UIStroke")
+optionsStroke.Color = COLORS.BORDER
+optionsStroke.Thickness = 1
+optionsStroke.Parent = modeOptionsFrame
+modeOptionsFrame.Parent = panel  -- parent to panel (overlay on content)
+
+-- Populate dropdown options
+local modes = {"Stable Diffusion", "NovelAI", "ComfyUI"}
+modeOptionsFrame.Size = UDim2.new(0, 140, 0, #modes * 24)  -- width to fit text, height for all options
+local optLayout = Instance.new("UIListLayout")
+optLayout.Parent = modeOptionsFrame
+for _, option in ipairs(modes) do
+    local optButton = Instance.new("TextButton")
+    optButton.Name = "Option_"..option
+    optButton.FontFace = fontInter
+    optButton.Text = option
+    optButton.TextColor3 = COLORS.TEXT_PRIMARY
+    optButton.TextSize = 14
+    optButton.BackgroundColor3 = COLORS.BG_INPUT
+    optButton.AutoButtonColor = false
+    optButton.Size = UDim2.new(1, 0, 0, 24)
+    optButton.Parent = modeOptionsFrame
+    -- Hover effect for options
+    optButton.MouseEnter:Connect(function()
+        optButton.BackgroundColor3 = COLORS.BORDER  -- slight highlight
+    end)
+    optButton.MouseLeave:Connect(function()
+        optButton.BackgroundColor3 = COLORS.BG_INPUT
+    end)
+    -- Selection behavior
+    optButton.MouseButton1Click:Connect(function()
+        modeDropdown.Text = option.."  ▼"
+        modeOptionsFrame.Visible = false
+    end)
 end
 
-local function stroke(gui, color, thickness)
-	local s = Instance.new("UIStroke")
-	s.Thickness = thickness or 1
-	s.Color = color or theme.stroke
-	s.ApplyStrokeMode = Enum.ApplyStrokeMode.Border
-	s.Parent = gui
-	return s
+-- Header "Enabled" toggle (with label)
+local enabledControl = Instance.new("Frame")
+enabledControl.Name = "EnabledControl"
+enabledControl.BackgroundTransparency = 1
+enabledControl.AutomaticSize = Enum.AutomaticSize.XY
+enabledControl.Parent = headerControls
+local enabledLayout = Instance.new("UIListLayout")
+enabledLayout.FillDirection = Enum.FillDirection.Horizontal
+enabledLayout.VerticalAlignment = Enum.VerticalAlignment.Center
+enabledLayout.Padding = UDim.new(0, 8)
+enabledLayout.Parent = enabledControl
+-- Label
+local enabledLabel = Instance.new("TextLabel")
+enabledLabel.BackgroundTransparency = 1
+enabledLabel.FontFace = fontInter
+enabledLabel.Text = "Enabled"
+enabledLabel.TextColor3 = COLORS.TEXT_SECONDARY
+enabledLabel.TextSize = 14
+enabledLabel.Parent = enabledControl
+-- Toggle switch frame (44x24)
+local toggleButton = Instance.new("TextButton")
+toggleButton.Name = "EnabledToggle"
+toggleButton.AutoButtonColor = false
+toggleButton.BackgroundColor3 = Color3.fromRGB(59, 66, 97)  -- #3b4261 off-state track color
+toggleButton.Size = UDim2.new(0, 44, 0, 24)
+toggleButton.Text = ""  -- no text, just a clickable frame
+-- Round toggle track
+local toggleCorner = Instance.new("UICorner")
+toggleCorner.CornerRadius = UDim.new(0, 12)
+toggleCorner.Parent = toggleButton
+toggleButton.Parent = enabledControl
+-- Toggle knob (white circle)
+local knob = Instance.new("Frame")
+knob.Name = "Knob"
+knob.BackgroundColor3 = Color3.fromRGB(255, 255, 255)
+knob.Size = UDim2.new(0, 18, 0, 18)
+knob.Position = UDim2.new(0, 3, 0.5, 0)  -- 3px from left, centered vertically in track
+knob.AnchorPoint = Vector2.new(0, 0.5)
+local knobCorner = Instance.new("UICorner")
+knobCorner.CornerRadius = UDim.new(1, 0)  -- make it a circle
+knobCorner.Parent = knob
+knob.Parent = toggleButton
+
+-- Toggle behavior
+local toggleOn = false
+local function setToggleState(on)
+    toggleOn = on
+    if on then
+        -- ON: green track, knob to right
+        toggleButton.BackgroundColor3 = COLORS.ACCENT_GREEN
+        knob:TweenPosition(UDim2.new(0, 23, 0.5, 0), "Out", "Quad", 0.2, true)
+    else
+        -- OFF: gray track, knob to left
+        toggleButton.BackgroundColor3 = Color3.fromRGB(59, 66, 97)  -- off-state color
+        knob:TweenPosition(UDim2.new(0, 3, 0.5, 0), "Out", "Quad", 0.2, true)
+    end
 end
+toggleButton.MouseButton1Click:Connect(function()
+    setToggleState(not toggleOn)
+end)
+-- (Clicking the label could also toggle, by connecting enabledLabel or the frame's click event if desired)
 
-local function pad(gui, l, t, r, b)
-	local p = Instance.new("UIPadding")
-	p.PaddingLeft = UDim.new(0, l or 0)
-	p.PaddingTop = UDim.new(0, t or 0)
-	p.PaddingRight = UDim.new(0, r or 0)
-	p.PaddingBottom = UDim.new(0, b or 0)
-	p.Parent = gui
-	return p
-end
-
-local function vlist(parent, padding)
-	local list = Instance.new("UIListLayout")
-	list.FillDirection = Enum.FillDirection.Vertical
-	list.HorizontalAlignment = Enum.HorizontalAlignment.Left
-	list.VerticalAlignment = Enum.VerticalAlignment.Top
-	list.Padding = UDim.new(0, padding or 8)
-	list.SortOrder = Enum.SortOrder.LayoutOrder
-	list.Parent = parent
-	return list
-end
-
-local function hlist(parent, padding)
-	local list = Instance.new("UIListLayout")
-	list.FillDirection = Enum.FillDirection.Horizontal
-	list.HorizontalAlignment = Enum.HorizontalAlignment.Left
-	list.VerticalAlignment = Enum.VerticalAlignment.Center
-	list.Padding = UDim.new(0, padding or 8)
-	list.SortOrder = Enum.SortOrder.LayoutOrder
-	list.Parent = parent
-	return list
-end
-
-local function makeText(parent, text, size, color, bold)
-	local lbl = Instance.new("TextLabel")
-	lbl.BackgroundTransparency = 1
-	lbl.Font = Enum.Font.Gotham
-	lbl.Text = text or ""
-	lbl.TextXAlignment = Enum.TextXAlignment.Left
-	lbl.TextYAlignment = Enum.TextYAlignment.Center
-	lbl.TextSize = size or 14
-	lbl.TextColor3 = color or theme.text
-	lbl.RichText = true
-	lbl.Parent = parent
-	lbl.AutoLocalize = false
-	if bold then lbl.FontFace.Weight = Enum.FontWeight.Bold end
-	return lbl
-end
-
-local function tween(o, tinfo, props)
-	TweenService:Create(o, tinfo or TweenInfo.new(0.15, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), props):Play()
-end
-
--- DRAGGING
-local function makeDraggable(dragHandle, target)
-	local dragging = false
-	local dragStart, startPos
-
-	dragHandle.InputBegan:Connect(function(input)
-		if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
-			dragging = true
-			dragStart = input.Position
-			startPos = target.Position
-			input.Changed:Connect(function()
-				if input.UserInputState == Enum.UserInputState.End then dragging = false end
-			end)
-		end
-	end)
-
-	UIS.InputChanged:Connect(function(input)
-		if dragging and (input.UserInputType == Enum.UserInputType.MouseMovement or input.UserInputType == Enum.UserInputType.Touch) then
-			local delta = input.Position - dragStart
-			target.Position = UDim2.fromOffset(startPos.X.Offset + delta.X, startPos.Y.Offset + delta.Y)
-		end
-	end)
-end
-
--- ROOT GUI
-local ui = Instance.new("ScreenGui")
-ui.Name = "StepByUI"
-ui.ResetOnSpawn = false
-ui.ZIndexBehavior = Enum.ZIndexBehavior.Global
-ui.Parent = playerGui
-
--- Screen blur when UI is open
-local Lighting = game:GetService("Lighting")
-local blur = Lighting:FindFirstChild("StepByBlur")
-if not blur then
-	blur = Instance.new("BlurEffect")
-	blur.Name = "StepByBlur"
-	blur.Parent = Lighting
-end
-blur.Size = math.floor(56 * 0.90) -- ~90% blur intensity
-blur.Enabled = true
-
--- MAIN WINDOW
-local main = Instance.new("Frame")
-main.Name = "Main"
-main.Size = UDim2.fromOffset(980, 570)
-main.Position = UDim2.fromScale(0.5, 0.5)
-main.AnchorPoint = Vector2.new(0.5, 0.5)
-main.BackgroundColor3 = theme.bg -- darker main
-main.BackgroundTransparency = 0.25
-main.BorderSizePixel = 0
-main.Parent = ui
-round(main, 10)
-stroke(main, theme.subtle, 1)
-
--- TOP BAR
-local top = Instance.new("Frame")
-top.Name = "TopBar"
-top.Size = UDim2.new(1, 0, 0, 44)
-top.BackgroundColor3 = theme.bg
-top.BackgroundTransparency = 0.25
-top.BorderSizePixel = 0
-round(top, 10)
--- mask round only top by overlaying a separate cornered frame
-local topMask = Instance.new("UICorner")
-topMask.CornerRadius = UDim.new(0, 10)
-topMask.Parent = top
-
-top.Parent = main
-stroke(top, theme.subtle, 1)
-
-local title = makeText(top, "GAMESENSE", 18, theme.text, true)
-title.Size = UDim2.fromOffset(200, 44)
-title.Position = UDim2.fromOffset(16, 0)
-
-local saveBtn = Instance.new("TextButton")
-saveBtn.Name = "Save"
-saveBtn.Text = "Save"
-saveBtn.Font = Enum.Font.Gotham
-saveBtn.TextSize = 14
-saveBtn.TextColor3 = theme.text
-saveBtn.AutoButtonColor = false
-saveBtn.Size = UDim2.fromOffset(72, 28)
-saveBtn.Position = UDim2.new(1, -88, 0, 8)
-saveBtn.BackgroundColor3 = theme.subtle
-saveBtn.Parent = top
-round(saveBtn, 6)
-stroke(saveBtn, theme.stroke, 1)
-
-local function buttonHover(btn)
-	btn.MouseEnter:Connect(function() tween(btn, nil, {BackgroundColor3 = theme.stroke}) end)
-	btn.MouseLeave:Connect(function() tween(btn, nil, {BackgroundColor3 = theme.subtle}) end)
-end
-buttonHover(saveBtn)
-
--- right-side icon bar (placeholders)
-local iconsBar = Instance.new("Frame")
-iconsBar.BackgroundTransparency = 1
-iconsBar.Size = UDim2.fromOffset(120, 28)
-iconsBar.Position = UDim2.new(1, -220, 0, 8)
-iconsBar.Parent = top
-local iconsLayout = hlist(iconsBar, 8)
-
-local function topIcon(char)
-	local b = Instance.new("TextButton")
-	b.Text = char
-	b.Font = Enum.Font.Gotham
-	b.TextSize = 16
-	b.AutoButtonColor = false
-	b.Size = UDim2.fromOffset(28, 28)
-	b.BackgroundColor3 = theme.subtle
-	b.TextColor3 = theme.text
-	b.Parent = iconsBar
-	round(b, 6)
-	stroke(b, theme.stroke, 1)
-	b.MouseEnter:Connect(function() tween(b, nil, {BackgroundColor3 = theme.stroke}) end)
-	b.MouseLeave:Connect(function() tween(b, nil, {BackgroundColor3 = theme.subtle}) end)
-	return b
-end
--- gear, script, search
-local gear = topIcon("⚙")
-local scriptIcon = topIcon("λ")
-local search = topIcon("🔍")
-
-makeDraggable(top, main)
-
--- BODY
+-- Panel Body (container for sidebar + content)
 local body = Instance.new("Frame")
-body.Name = "Body"
+body.Name = "PanelBody"
 body.BackgroundTransparency = 1
-body.BorderSizePixel = 0
-body.Position = UDim2.fromOffset(0, 44)
-body.Size = UDim2.new(1, 0, 1, -44)
-body.Parent = main
+body.Position = UDim2.new(0, 0, 0, 50)  -- below header
+body.Size = UDim2.new(1, 0, 1, -50)    -- full panel width, remaining height
+body.Parent = panel
 
--- SIDEBAR WINDOW (separate frame)
-local sidebarWin = Instance.new("Frame")
-sidebarWin.Name = "SidebarWindow"
-sidebarWin.BackgroundColor3 = theme.side_g1
-sidebarWin.BackgroundTransparency = 0.25
-sidebarWin.BorderSizePixel = 0
-sidebarWin.Size = UDim2.fromOffset(190, 510)
-sidebarWin.Position = UDim2.fromScale(0.5, 0.5)
-sidebarWin.AnchorPoint = Vector2.new(1, 0) -- we'll snap to the left of main
-sidebarWin.Parent = ui
-round(sidebarWin, 10)
-stroke(sidebarWin, theme.subtle, 1)
-local sideGrad = Instance.new("UIGradient")
-sideGrad.Color = ColorSequence.new{
-	ColorSequenceKeypoint.new(0, Color3.fromRGB(80, 92, 84)),
-	ColorSequenceKeypoint.new(1, Color3.fromRGB(40, 44, 42))
-}
-sideGrad.Rotation = 90
-sideGrad.Parent = sidebarWin
+-- Sidebar Frame
+local sidebar = Instance.new("Frame")
+sidebar.Name = "Sidebar"
+sidebar.BackgroundColor3 = COLORS.BG_SIDEBAR
+sidebar.BorderSizePixel = 0
+sidebar.Size = UDim2.new(0, 180, 1, 0)  -- 180px width, full height of body
+sidebar.Position = UDim2.new(0, 0, 0, 0)
+sidebar.Parent = body
+-- Right border line
+local sidebarBorder = Instance.new("Frame")
+sidebarBorder.BackgroundColor3 = COLORS.BORDER
+sidebarBorder.BorderSizePixel = 0
+sidebarBorder.Size = UDim2.new(0, 1, 1, 0)
+sidebarBorder.Position = UDim2.new(1, 0, 0, 0)
+sidebarBorder.Parent = sidebar
+-- Sidebar list layout
+local navList = Instance.new("UIListLayout")
+navList.FillDirection = Enum.FillDirection.Vertical
+navList.SortOrder = Enum.SortOrder.LayoutOrder
+navList.Parent = sidebar
+-- Sidebar padding (15px top & bottom)
+local sidebarPad = Instance.new("UIPadding")
+sidebarPad.PaddingTop = UDim.new(0, 15)
+sidebarPad.PaddingBottom = UDim.new(0, 15)
+sidebarPad.Parent = sidebar
 
-local sidebarList = Instance.new("ScrollingFrame")
-sidebarList.Name = "List"
-sidebarList.Size = UDim2.new(1, 0, 1, -80)
-sidebarList.Position = UDim2.fromOffset(0, 8)
-sidebarList.BackgroundTransparency = 1
-sidebarList.BorderSizePixel = 0
-sidebarList.ScrollBarThickness = 3
-sidebarList.ScrollBarImageColor3 = theme.stroke
-sidebarList.Parent = sidebarWin
-pad(sidebarList, 12, 8, 12, 8)
+-- Content Area Frame (holds category content frames)
+local contentArea = Instance.new("Frame")
+contentArea.Name = "ContentArea"
+contentArea.BackgroundColor3 = COLORS.BG_MAIN  -- same as panel background
+contentArea.BorderSizePixel = 0
+contentArea.Position = UDim2.new(0, 180, 0, 0)
+contentArea.Size = UDim2.new(1, -180, 1, 0)  -- remaining width, full height
+contentArea.Parent = body
 
-vlist(sidebarList, 6)
+-- Define categories and create nav buttons + content frames for each
+local categories = {"General", "Appearance", "Advanced"}
+local categoryContentFrames = {}  -- to store references
+local activeCategoryIndex = 1
 
-local currentActive
-local function sideButton(text, active)
-	local btn = Instance.new("TextButton")
-	btn.Text = "    " .. text
-	btn.Font = Enum.Font.Gotham
-	btn.TextSize = 14
-	btn.TextXAlignment = Enum.TextXAlignment.Left
-	btn.AutoButtonColor = false
-	btn.Size = UDim2.new(1, 0, 0, 32)
-	btn.BackgroundColor3 = theme.panel
-	btn.TextColor3 = theme.muted
-	round(btn, 6)
-	stroke(btn, theme.stroke, 1)
-	btn.Parent = sidebarList
+for i, catName in ipairs(categories) do
+    -- Nav Button for category
+    local navButton = Instance.new("TextButton")
+    navButton.Name = "Nav"..catName
+    navButton.FontFace = fontInter
+    navButton.Text = catName
+    navButton.TextSize = 14
+    navButton.TextXAlignment = Enum.TextXAlignment.Left
+    navButton.AutoButtonColor = false
+    navButton.BackgroundTransparency = 1  -- we'll use custom highlight frames
+    navButton.Size = UDim2.new(1, 0, 0, 36)  -- full width of sidebar, 36px height
+    navButton.LayoutOrder = i
+    navButton.TextColor3 = COLORS.TEXT_SECONDARY
+    navButton.Parent = sidebar
+    -- Padding inside nav button (for left indent and vertical padding)
+    local navPad = Instance.new("UIPadding")
+    navPad.PaddingLeft = UDim.new(0, 20)
+    navPad.PaddingRight = UDim.new(0, 20)
+    navPad.PaddingTop = UDim.new(0, 10)
+    navPad.PaddingBottom = UDim.new(0, 10)
+    navPad.Parent = navButton
+    -- Highlight bar (3px) for active state
+    local highlight = Instance.new("Frame")
+    highlight.Name = "Highlight"
+    highlight.BackgroundColor3 = COLORS.ACCENT_PRIMARY
+    highlight.BorderSizePixel = 0
+    highlight.Size = UDim2.new(0, 3, 1, 0)
+    highlight.Position = UDim2.new(0, 0, 0, 0)
+    highlight.Visible = false  -- only visible for active tab
+    highlight.Parent = navButton
 
-	local bar = Instance.new("Frame")
-	bar.Size = UDim2.new(0, 3, 1, -8)
-	bar.Position = UDim2.fromOffset(6, 4)
-	bar.BackgroundColor3 = theme.accent
-	bar.BorderSizePixel = 0
-	bar.Parent = btn
-	bar.Visible = false
+    -- Mouse hover effects
+    navButton.MouseEnter:Connect(function()
+        if i ~= activeCategoryIndex then
+            -- Hover: light blue background (10% opacity accent)
+            navButton.BackgroundColor3 = COLORS.ACCENT_PRIMARY
+            navButton.BackgroundTransparency = 0.9
+        end
+    end)
+    navButton.MouseLeave:Connect(function()
+        if i ~= activeCategoryIndex then
+            -- Remove hover highlight
+            navButton.BackgroundTransparency = 1
+        end
+    end)
 
-	local function setActive()
-		if currentActive and currentActive ~= btn then
-			currentActive.bar.Visible = false
-			currentActive.TextColor3 = theme.muted
-			currentActive.BackgroundColor3 = theme.panel
-		end
-		currentActive = btn
-		bar.Visible = true
-		btn.TextColor3 = theme.text
-		btn.BackgroundColor3 = theme.subtle
-	end
+    -- Create corresponding content frame
+    local contentFrame = Instance.new("Frame")
+    contentFrame.Name = catName.."Content"
+    contentFrame.BackgroundTransparency = 1
+    contentFrame.Size = UDim2.new(1, 0, 1, 0)
+    contentFrame.Visible = false  -- all but one will be hidden initially
+    contentFrame.Parent = contentArea
+    categoryContentFrames[i] = contentFrame
 
-	btn.MouseEnter:Connect(function()
-		if currentActive ~= btn then tween(btn, nil, {BackgroundColor3 = theme.panel}) end
-	end)
-	btn.MouseLeave:Connect(function()
-		if currentActive ~= btn then tween(btn, nil, {BackgroundColor3 = theme.panel}) end
-	end)
+    -- Populate content for each category
+    if catName == "General" then
+        -- General Settings content:
+        -- Group 1: General Settings (two toggles)
+        local group1 = Instance.new("Frame")
+        group1.Name = "GeneralGroup"
+        group1.BackgroundColor3 = Color3.fromRGB(0, 0, 0)
+        group1.BackgroundTransparency = 0.9  -- 10% opaque black
+        group1.Size = UDim2.new(1, -2*25, 0, 0)  -- width minus horizontal padding, auto height
+        group1.Position = UDim2.new(0, 0, 0, 0)
+        group1.AutomaticSize = Enum.AutomaticSize.Y
+        local group1Stroke = Instance.new("UIStroke")
+        group1Stroke.Color = COLORS.BORDER
+        group1Stroke.Thickness = 1
+        group1Stroke.Parent = group1
+        local group1Corner = Instance.new("UICorner")
+        group1Corner.CornerRadius = UDim.new(0, 8)
+        group1Corner.Parent = group1
+        group1.Parent = contentFrame
+        -- Group internal padding
+        local group1Pad = Instance.new("UIPadding")
+        group1Pad.PaddingTop = UDim.new(0, 20)
+        group1Pad.PaddingBottom = UDim.new(0, 20)
+        group1Pad.PaddingLeft = UDim.new(0, 20)
+        group1Pad.PaddingRight = UDim.new(0, 20)
+        group1Pad.Parent = group1
+        -- Group Title
+        local group1Title = Instance.new("TextLabel")
+        group1Title.Name = "Title"
+        group1Title.BackgroundTransparency = 1
+        group1Title.FontFace = fontInterBold  -- semi-bold (600) approximated with bold
+        group1Title.Text = "General Settings"
+        group1Title.TextColor3 = COLORS.ACCENT_GREEN
+        group1Title.TextSize = 16
+        group1Title.TextXAlignment = Enum.TextXAlignment.Left
+        group1Title.Size = UDim2.new(1, 0, 0, 0)
+        group1Title.AutomaticSize = Enum.AutomaticSize.Y
+        group1Title.Parent = group1
+        local titleUnderline = Instance.new("Frame")
+        titleUnderline.BackgroundColor3 = COLORS.BORDER
+        titleUnderline.BorderSizePixel = 0
+        titleUnderline.Size = UDim2.new(1, 0, 0, 1)
+        titleUnderline.Position = UDim2.new(0, 0, 1, -1)
+        titleUnderline.Parent = group1Title
+        -- Layout for content in this group
+        local group1Layout = Instance.new("UIListLayout")
+        group1Layout.SortOrder = Enum.SortOrder.LayoutOrder
+        group1Layout.Padding = UDim.new(0, 15)
+        group1Layout.Parent = group1
 
-	btn.MouseButton1Click:Connect(setActive)
-	if active then setActive() end
+        -- Toggle A
+        local toggleAFrame = Instance.new("Frame")
+        toggleAFrame.BackgroundTransparency = 1
+        toggleAFrame.Size = UDim2.new(1, 0, 0, 24)
+        toggleAFrame.LayoutOrder = 1
+        toggleAFrame.Parent = group1
+        local toggleALabel = Instance.new("TextLabel")
+        toggleALabel.BackgroundTransparency = 1
+        toggleALabel.FontFace = fontInter
+        toggleALabel.Text = "Enable Feature A"
+        toggleALabel.TextColor3 = COLORS.TEXT_SECONDARY
+        toggleALabel.TextSize = 14
+        toggleALabel.TextXAlignment = Enum.TextXAlignment.Left
+        toggleALabel.Size = UDim2.new(1, -54, 1, 0)  -- leave space for toggle switch on the right
+        toggleALabel.Parent = toggleAFrame
+        local toggleAButton = toggleButton:Clone()  -- clone the header toggle
+        toggleAButton.Name = "ToggleFeatureA"
+        toggleAButton.Position = UDim2.new(1, -44, 0, 0)  -- align to right of frame
+        toggleAButton.AnchorPoint = Vector2.new(1, 0)
+        toggleAButton.Parent = toggleAFrame
+        -- Clone knob as well (since clone only copied the TextButton)
+        local knobA = knob:Clone()
+        knobA.Parent = toggleAButton
+        -- Script the toggle similarly
+        local onA = false
+        toggleAButton.MouseButton1Click:Connect(function()
+            onA = not onA
+            if onA then
+                toggleAButton.BackgroundColor3 = COLORS.ACCENT_GREEN
+                knobA:TweenPosition(UDim2.new(0, 23, 0.5, 0), "Out", "Quad", 0.2, true)
+            else
+                toggleAButton.BackgroundColor3 = Color3.fromRGB(59, 66, 97)
+                knobA:TweenPosition(UDim2.new(0, 3, 0.5, 0), "Out", "Quad", 0.2, true)
+            end
+        end)
 
-	btn.bar = bar
-	return btn
+        -- Toggle B (similarly)
+        local toggleBFrame = toggleAFrame:Clone()
+        toggleBFrame.LayoutOrder = 2
+        toggleBFrame.Parent = group1
+        toggleBFrame:FindFirstChild("TextLabel").Text = "Enable Feature B"
+        local toggleBButton = toggleBFrame:FindFirstChild("EnabledToggle") or toggleBFrame:FindFirstChild("ToggleFeatureA")
+        toggleBButton.Name = "ToggleFeatureB"
+        local knobB = toggleBButton:FindFirstChild("Knob")
+        local onB = false
+        toggleBButton.MouseButton1Click:Connect(function()
+            onB = not onB
+            if onB then
+                toggleBButton.BackgroundColor3 = COLORS.ACCENT_GREEN
+                knobB:TweenPosition(UDim2.new(0, 23, 0.5, 0), "Out", "Quad", 0.2, true)
+            else
+                toggleBButton.BackgroundColor3 = Color3.fromRGB(59, 66, 97)
+                knobB:TweenPosition(UDim2.new(0, 3, 0.5, 0), "Out", "Quad", 0.2, true)
+            end
+        end)
+
+        -- Group 2: Audio Settings (slider example)
+        local group2 = Instance.new("Frame")
+        group2.Name = "AudioGroup"
+        group2.BackgroundColor3 = Color3.fromRGB(0, 0, 0)
+        group2.BackgroundTransparency = 0.9
+        group2.Size = UDim2.new(1, -2*25, 0, 0)
+        group2.AutomaticSize = Enum.AutomaticSize.Y
+        local group2Stroke = Instance.new("UIStroke")
+        group2Stroke.Color = COLORS.BORDER
+        group2Stroke.Thickness = 1
+        group2Stroke.Parent = group2
+        local group2Corner = Instance.new("UICorner")
+        group2Corner.CornerRadius = UDim.new(0, 8)
+        group2Corner.Parent = group2
+        group2.Parent = contentFrame
+        local group2Pad = group1Pad:Clone()
+        group2Pad.Parent = group2
+        local group2Title = group1Title:Clone()
+        group2Title.Text = "Audio Settings"
+        group2Title.Parent = group2
+        local group2Layout = group1Layout:Clone()
+        group2Layout.Parent = group2
+
+        -- Volume slider label
+        local volumeLabel = Instance.new("TextLabel")
+        volumeLabel.BackgroundTransparency = 1
+        volumeLabel.FontFace = fontInter
+        volumeLabel.Text = "Volume"
+        volumeLabel.TextColor3 = COLORS.TEXT_SECONDARY
+        volumeLabel.TextSize = 14
+        volumeLabel.TextXAlignment = Enum.TextXAlignment.Left
+        volumeLabel.Size = UDim2.new(1, 0, 0, 18)
+        volumeLabel.LayoutOrder = 1
+        volumeLabel.Parent = group2
+
+        -- Slider container (for track + value display)
+        local sliderContainer = Instance.new("Frame")
+        sliderContainer.BackgroundTransparency = 1
+        sliderContainer.Size = UDim2.new(1, 0, 0, 30)  -- enough height for knob
+        sliderContainer.LayoutOrder = 2
+        sliderContainer.Parent = group2
+        local sliderLayout = Instance.new("UIListLayout")
+        sliderLayout.FillDirection = Enum.FillDirection.Horizontal
+        sliderLayout.VerticalAlignment = Enum.VerticalAlignment.Center
+        sliderLayout.HorizontalAlignment = Enum.HorizontalAlignment.Left
+        sliderLayout.Padding = UDim.new(0, 10)
+        sliderLayout.Parent = sliderContainer
+
+        -- Slider track
+        local sliderTrack = Instance.new("Frame")
+        sliderTrack.Name = "SliderTrack"
+        sliderTrack.BackgroundColor3 = COLORS.BORDER
+        sliderTrack.BorderSizePixel = 0
+        sliderTrack.Size = UDim2.new(0, 200, 0, 4)
+        local trackCorner = Instance.new("UICorner")
+        trackCorner.CornerRadius = UDim.new(0, 2)
+        trackCorner.Parent = sliderTrack
+        sliderTrack.Parent = sliderContainer
+        -- Slider fill
+        local sliderFill = Instance.new("Frame")
+        sliderFill.Name = "SliderFill"
+        sliderFill.BackgroundColor3 = COLORS.ACCENT_PRIMARY
+        sliderFill.BorderSizePixel = 0
+        sliderFill.Size = UDim2.new(0, 0, 1, 0)  -- width 0 initially, height same as track
+        local fillCorner = Instance.new("UICorner")
+        fillCorner.CornerRadius = UDim.new(0, 2)
+        fillCorner.Parent = sliderFill
+        sliderFill.Parent = sliderTrack
+        -- Slider knob (draggable)
+        local sliderKnob = Instance.new("TextButton")
+        sliderKnob.Name = "SliderKnob"
+        sliderKnob.BackgroundColor3 = Color3.fromRGB(255, 255, 255)
+        sliderKnob.BorderSizePixel = 0
+        sliderKnob.AutoButtonColor = false
+        sliderKnob.Size = UDim2.new(0, 18, 0, 18)
+        sliderKnob.Position = UDim2.new(0, 0, 0.5, 0)  -- will adjust via script
+        sliderKnob.AnchorPoint = Vector2.new(0, 0.5)
+        local knobCorner2 = Instance.new("UICorner")
+        knobCorner2.CornerRadius = UDim.new(1, 0)
+        knobCorner2.Parent = sliderKnob
+        sliderKnob.Parent = sliderContainer
+        -- Value display label
+        local valueLabel = Instance.new("TextLabel")
+        valueLabel.BackgroundTransparency = 1
+        valueLabel.FontFace = fontInter
+        valueLabel.Text = "50"  -- initial value
+        valueLabel.TextColor3 = COLORS.TEXT_PRIMARY
+        valueLabel.TextSize = 14
+        valueLabel.Size = UDim2.new(0, 30, 0, 18)
+        valueLabel.LayoutOrder = 3
+        valueLabel.Parent = sliderContainer
+
+        -- Slider script: make knob draggable and update fill/value
+        local trackWidth = 200
+        local knobWidth = 18
+        local dragging = false
+        local uis = game:GetService("UserInputService")
+        local mouse = player:GetMouse()
+        local function updateSlider(inputX)
+            -- Convert global X to relative position on track
+            local relX = inputX - sliderTrack.AbsolutePosition.X
+            relX = math.clamp(relX, 0, trackWidth - knobWidth)
+            -- Move knob
+            sliderKnob.Position = UDim2.new(0, relX, 0.5, 0)
+            -- Update fill width (to knob's right edge)
+            sliderFill.Size = UDim2.new(0, relX + knobWidth, 1, 0)
+            -- Update value label (0-100)
+            local percent = math.floor((relX / (trackWidth - knobWidth)) * 100 + 0.5)
+            valueLabel.Text = tostring(percent)
+        end
+        -- Initialize slider at 50%
+        local initialX = math.floor((50/100) * (trackWidth - knobWidth))
+        sliderKnob.Position = UDim2.new(0, initialX, 0.5, 0)
+        sliderFill.Size = UDim2.new(0, initialX + knobWidth, 1, 0)
+        -- Drag events
+        sliderKnob.MouseButton1Down:Connect(function()
+            dragging = true
+        end)
+        uis.InputEnded:Connect(function(input)
+            if input.UserInputType == Enum.UserInputType.MouseButton1 then
+                dragging = false
+            end
+        end)
+        mouse.Move:Connect(function()
+            if dragging then
+                updateSlider(mouse.X)
+            end
+        end)
+        -- Also allow clicking on track to jump to position
+        sliderTrack.InputBegan:Connect(function(input)
+            if input.UserInputType == Enum.UserInputType.MouseButton1 then
+                updateSlider(input.Position.X)
+                dragging = true
+            end
+        end)
+        sliderTrack.InputEnded:Connect(function(input)
+            if input.UserInputType == Enum.UserInputType.MouseButton1 then
+                dragging = false
+            end
+        end)
+    elseif catName == "Appearance" then
+        -- Appearance Settings content:
+        local group = Instance.new("Frame")
+        group.Name = "AppearanceGroup"
+        group.BackgroundColor3 = Color3.fromRGB(0, 0, 0)
+        group.BackgroundTransparency = 0.9
+        group.Size = UDim2.new(1, -2*25, 0, 0)
+        group.AutomaticSize = Enum.AutomaticSize.Y
+        local groupStroke = Instance.new("UIStroke")
+        groupStroke.Color = COLORS.BORDER
+        groupStroke.Thickness = 1
+        groupStroke.Parent = group
+        local groupCorner = Instance.new("UICorner")
+        groupCorner.CornerRadius = UDim.new(0, 8)
+        groupCorner.Parent = group
+        group.Parent = contentFrame
+        local groupPad = Instance.new("UIPadding")
+        groupPad.PaddingTop = UDim.new(0, 20)
+        groupPad.PaddingBottom = UDim.new(0, 20)
+        groupPad.PaddingLeft = UDim.new(0, 20)
+        groupPad.PaddingRight = UDim.new(0, 20)
+        groupPad.Parent = group
+        local groupTitle = Instance.new("TextLabel")
+        groupTitle.BackgroundTransparency = 1
+        groupTitle.FontFace = fontInterBold
+        groupTitle.Text = "Appearance"
+        groupTitle.TextColor3 = COLORS.ACCENT_GREEN
+        groupTitle.TextSize = 16
+        groupTitle.TextXAlignment = Enum.TextXAlignment.Left
+        groupTitle.Size = UDim2.new(1, 0, 0, 0)
+        groupTitle.AutomaticSize = Enum.AutomaticSize.Y
+        groupTitle.Parent = group
+        local titleLine = Instance.new("Frame")
+        titleLine.BackgroundColor3 = COLORS.BORDER
+        titleLine.BorderSizePixel = 0
+        titleLine.Size = UDim2.new(1, 0, 0, 1)
+        titleLine.Position = UDim2.new(0, 0, 1, -1)
+        titleLine.Parent = groupTitle
+        local groupLayout = Instance.new("UIListLayout")
+        groupLayout.SortOrder = Enum.SortOrder.LayoutOrder
+        groupLayout.Padding = UDim.new(0, 15)
+        groupLayout.Parent = group
+
+        -- Theme dropdown
+        local themeFrame = Instance.new("Frame")
+        themeFrame.BackgroundTransparency = 1
+        themeFrame.Size = UDim2.new(1, 0, 0, 32)
+        themeFrame.LayoutOrder = 1
+        themeFrame.Parent = group
+        local themeLabel = Instance.new("TextLabel")
+        themeLabel.BackgroundTransparency = 1
+        themeLabel.FontFace = fontInter
+        themeLabel.Text = "Theme:"
+        themeLabel.TextColor3 = COLORS.TEXT_SECONDARY
+        themeLabel.TextSize = 14
+        themeLabel.TextXAlignment = Enum.TextXAlignment.Left
+        themeLabel.Position = UDim2.new(0, 0, 0, 5)
+        themeLabel.Size = UDim2.new(0, 50, 1, 0)
+        themeLabel.Parent = themeFrame
+        local themeDropdown = modeDropdown:Clone()
+        themeDropdown.Name = "ThemeDropdown"
+        themeDropdown.Text = "Dark  ▼"
+        themeDropdown.Position = UDim2.new(0, 60, 0, 0)
+        themeDropdown.Parent = themeFrame
+        -- Reuse options list for theme
+        local themeOptions = modeOptionsFrame:Clone()
+        themeOptions.Name = "ThemeOptions"
+        themeOptions.Parent = panel
+        themeOptions.Visible = false
+        -- Options for Light/Dark
+        for _, child in ipairs(themeOptions:GetChildren()) do
+            if child:IsA("TextButton") then child:Destroy() end
+        end
+        themeOptions.Size = UDim2.new(0, 100, 0, 48)
+        local themeOptLayout = themeOptions:FindFirstChildOfClass("UIListLayout")
+        if themeOptLayout then themeOptLayout:Destroy() end
+        local themeListLayout = Instance.new("UIListLayout")
+        themeListLayout.Parent = themeOptions
+        local themes = {"Dark", "Light"}
+        for _, t in ipairs(themes) do
+            local tbtn = Instance.new("TextButton")
+            tbtn.FontFace = fontInter
+            tbtn.Text = t
+            tbtn.TextColor3 = COLORS.TEXT_PRIMARY
+            tbtn.TextSize = 14
+            tbtn.BackgroundColor3 = COLORS.BG_INPUT
+            tbtn.AutoButtonColor = false
+            tbtn.Size = UDim2.new(1, 0, 0, 24)
+            tbtn.Parent = themeOptions
+            tbtn.MouseEnter:Connect(function()
+                tbtn.BackgroundColor3 = COLORS.BORDER
+            end)
+            tbtn.MouseLeave:Connect(function()
+                tbtn.BackgroundColor3 = COLORS.BG_INPUT
+            end)
+            tbtn.MouseButton1Click:Connect(function()
+                themeDropdown.Text = t.."  ▼"
+                themeOptions.Visible = false
+            end)
+        end
+        -- Connect themeDropdown to show themeOptions
+        themeDropdown.MouseButton1Click:Connect(function()
+            local absPos = themeDropdown.AbsolutePosition
+            themeOptions.Position = UDim2.new(0, absPos.X - panel.AbsolutePosition.X,
+                                             0, absPos.Y - panel.AbsolutePosition.Y + themeDropdown.AbsoluteSize.Y)
+            themeOptions.ZIndex = 5
+            themeDropdown.ZIndex = 5
+            for _, btn in ipairs(themeOptions:GetChildren()) do
+                if btn:IsA("TextButton") then btn.ZIndex = 5 end
+            end
+            themeOptions.Visible = not themeOptions.Visible
+        end)
+        -- Toggle for Dark Mode (for demonstration)
+        local darkModeFrame = enabledControl:Clone()
+        darkModeFrame.LayoutOrder = 2
+        darkModeFrame.Parent = group
+        local darkLabel = darkModeFrame:FindFirstChild("TextLabel")
+        darkLabel.Text = "Dark Mode"
+        local darkToggle = darkModeFrame:FindFirstChild("EnabledToggle") or darkModeFrame:FindFirstChild("EnabledToggle")
+        if darkToggle then
+            -- Reset toggle state
+            darkToggle.BackgroundColor3 = Color3.fromRGB(59, 66, 97)
+            local darkKnob = darkToggle:FindFirstChild("Knob")
+            if darkKnob then
+                darkKnob.Position = UDim2.new(0, 3, 0.5, 0)
+            end
+            local onDark = true
+            -- Assume default "Dark Mode" is on since theme is Dark
+            darkToggle.BackgroundColor3 = COLORS.ACCENT_GREEN
+            if darkToggle:FindFirstChild("Knob") then
+                darkToggle.Knob.Position = UDim2.new(0, 23, 0.5, 0)
+            end
+            onDark = true
+            darkToggle.MouseButton1Click:Connect(function()
+                onDark = not onDark
+                if onDark then
+                    darkToggle.BackgroundColor3 = COLORS.ACCENT_GREEN
+                    darkToggle.Knob:TweenPosition(UDim2.new(0, 23, 0.5, 0), "Out", "Quad", 0.2, true)
+                    themeDropdown.Text = "Dark  ▼"
+                else
+                    darkToggle.BackgroundColor3 = Color3.fromRGB(59, 66, 97)
+                    darkToggle.Knob:TweenPosition(UDim2.new(0, 3, 0.5, 0), "Out", "Quad", 0.2, true)
+                    themeDropdown.Text = "Light  ▼"
+                end
+            end)
+        end
+    elseif catName == "Advanced" then
+        -- Advanced Settings content:
+        local group = Instance.new("Frame")
+        group.Name = "AdvancedGroup"
+        group.BackgroundColor3 = Color3.fromRGB(0, 0, 0)
+        group.BackgroundTransparency = 0.9
+        group.Size = UDim2.new(1, -2*25, 0, 0)
+        group.AutomaticSize = Enum.AutomaticSize.Y
+        local groupStroke = Instance.new("UIStroke")
+        groupStroke.Color = COLORS.BORDER
+        groupStroke.Thickness = 1
+        groupStroke.Parent = group
+        local groupCorner = Instance.new("UICorner")
+        groupCorner.CornerRadius = UDim.new(0, 8)
+        groupCorner.Parent = group
+        group.Parent = contentFrame
+        local groupPad = Instance.new("UIPadding")
+        groupPad.PaddingTop = UDim.new(0, 20)
+        groupPad.PaddingBottom = UDim.new(0, 20)
+        groupPad.PaddingLeft = UDim.new(0, 20)
+        groupPad.PaddingRight = UDim.new(0, 20)
+        groupPad.Parent = group
+        local groupTitle = Instance.new("TextLabel")
+        groupTitle.BackgroundTransparency = 1
+        groupTitle.FontFace = fontInterBold
+        groupTitle.Text = "Advanced"
+        groupTitle.TextColor3 = COLORS.ACCENT_GREEN
+        groupTitle.TextSize = 16
+        groupTitle.TextXAlignment = Enum.TextXAlignment.Left
+        groupTitle.Size = UDim2.new(1, 0, 0, 0)
+        groupTitle.AutomaticSize = Enum.AutomaticSize.Y
+        groupTitle.Parent = group
+        local titleLine = Instance.new("Frame")
+        titleLine.BackgroundColor3 = COLORS.BORDER
+        titleLine.BorderSizePixel = 0
+        titleLine.Size = UDim2.new(1, 0, 0, 1)
+        titleLine.Position = UDim2.new(0, 0, 1, -1)
+        titleLine.Parent = groupTitle
+        local groupLayout = Instance.new("UIListLayout")
+        groupLayout.SortOrder = Enum.SortOrder.LayoutOrder
+        groupLayout.Padding = UDim.new(0, 15)
+        groupLayout.Parent = group
+
+        -- Reset to Defaults and Delete Data buttons (horizontal group)
+        local buttonRow = Instance.new("Frame")
+        buttonRow.BackgroundTransparency = 1
+        buttonRow.Size = UDim2.new(1, 0, 0, 0)
+        buttonRow.AutomaticSize = Enum.AutomaticSize.Y
+        buttonRow.LayoutOrder = 1
+        buttonRow.Parent = group
+        local buttonRowLayout = Instance.new("UIListLayout")
+        buttonRowLayout.FillDirection = Enum.FillDirection.Horizontal
+        buttonRowLayout.Padding = UDim.new(0, 10)
+        buttonRowLayout.Parent = buttonRow
+
+        -- Reset button (base style, with icon)
+        local resetBtn = Instance.new("TextButton")
+        resetBtn.AutoButtonColor = false
+        resetBtn.FontFace = fontInter
+        resetBtn.Text = "🔄 Reset to Default"
+        resetBtn.TextColor3 = COLORS.TEXT_PRIMARY
+        resetBtn.TextSize = 14
+        resetBtn.BackgroundColor3 = Color3.fromRGB(41, 46, 66)  -- base bg #292e42:contentReference[oaicite:46]{index=46}
+        resetBtn.Size = UDim2.new(0, 0, 0, 0)
+        resetBtn.AutomaticSize = Enum.AutomaticSize.XY
+        local resetPad = Instance.new("UIPadding")
+        resetPad.PaddingTop = UDim.new(0, 8)
+        resetPad.PaddingBottom = UDim.new(0, 8)
+        resetPad.PaddingLeft = UDim.new(0, 15)
+        resetPad.PaddingRight = UDim.new(0, 15)
+        resetPad.Parent = resetBtn
+        local resetCorner = Instance.new("UICorner")
+        resetCorner.CornerRadius = UDim.new(0, 5)
+        resetCorner.Parent = resetBtn
+        local resetStroke = Instance.new("UIStroke")
+        resetStroke.Color = COLORS.BORDER
+        resetStroke.Thickness = 1
+        resetStroke.Parent = resetBtn
+        resetBtn.Parent = buttonRow
+
+        -- Delete button (danger style, with icon)
+        local deleteBtn = resetBtn:Clone()
+        deleteBtn.Text = "🗑️ Delete All Data"
+        deleteBtn.BackgroundColor3 = COLORS.ACCENT_SECOND  -- danger red
+        deleteBtn.TextColor3 = COLORS.BG_MAIN  -- text on danger is background main (dark):contentReference[oaicite:47]{index=47}
+        local delStroke = deleteBtn:FindFirstChildOfClass("UIStroke")
+        if delStroke then delStroke.Color = COLORS.ACCENT_SECOND end
+        deleteBtn.Parent = buttonRow
+
+        -- Base & danger button hover effects
+        local function setupButtonHover(btn, isDanger, isPrimary)
+            btn.MouseEnter:Connect(function()
+                if isPrimary or isDanger then
+                    -- Primary and danger use opacity change on hover (simulate opacity 0.9)
+                    btn.BackgroundTransparency = 0.1  -- slightly reduce opacity (make color a bit dimmer)
+                else
+                    -- Base button: change to hover color (#3b4261):contentReference[oaicite:48]{index=48}
+                    btn.BackgroundColor3 = Color3.fromRGB(59, 66, 97)
+                end
+                btn.ResetHover = false
+            end)
+            btn.MouseLeave:Connect(function()
+                if isPrimary or isDanger then
+                    btn.BackgroundTransparency = 0  -- return to fully opaque
+                else
+                    btn.BackgroundColor3 = Color3.fromRGB(41, 46, 66)
+                end
+            end)
+        end
+        setupButtonHover(resetBtn, false, false)
+        setupButtonHover(deleteBtn, true, false)
+        -- (If we had a primary style button here, we'd call setupButtonHover(button, false, true))
+
+        -- Connect button actions (for demonstration, just print to output)
+        resetBtn.MouseButton1Click:Connect(function()
+            print("Settings reset to default.")
+        end)
+        deleteBtn.MouseButton1Click:Connect(function()
+            print("All data deleted!")
+        end)
+    end
 end
 
-local cats = {
-	"RageBot", "Anti Aim", "Legitbot",
-	"Players", "Weapon", "Grenades", "Bomb",
-	"World", "View", "Miscellaneous", "Main", "Inventory", "Lua", "Configs"
-}
-
-for i, c in ipairs(cats) do
-	sideButton(c, c == "Anti Aim").LayoutOrder = i
+-- Set initial active tab (General)
+categoryContentFrames[1].Visible = true
+-- Configure initial sidebar active styles
+local firstNavButton = sidebar:FindFirstChild("Nav"..categories[1])
+if firstNavButton then
+    firstNavButton.TextColor3 = COLORS.TEXT_PRIMARY
+    firstNavButton.FontFace = fontInterBold
+    local hl = firstNavButton:FindFirstChild("Highlight")
+    if hl then hl.Visible = true end
+    firstNavButton.BackgroundColor3 = COLORS.ACCENT_PRIMARY
+    firstNavButton.BackgroundTransparency = 0.85  -- 15% opacity accent (active):contentReference[oaicite:49]{index=49}
 end
 
--- Sidebar footer with avatar
-local footer = Instance.new("Frame")
-footer.Size = UDim2.new(1, -16, 0, 56)
-footer.Position = UDim2.new(0, 8, 1, -60)
-footer.BackgroundColor3 = theme.panel
-footer.BackgroundTransparency = 0.25
-footer.Parent = sidebarWin
-round(footer, 8)
-stroke(footer, theme.stroke, 1)
-
-local avatar = Instance.new("ImageLabel")
-avatar.BackgroundTransparency = 1
-avatar.Size = UDim2.fromOffset(40, 40)
-avatar.Position = UDim2.fromOffset(8, 8)
-avatar.Parent = footer
-local thumb, ready = Players:GetUserThumbnailAsync(localPlayer.UserId, Enum.ThumbnailType.HeadShot, Enum.ThumbnailSize.Size100x100)
-avatar.Image = thumb
-
-local uname = makeText(footer, localPlayer.DisplayName or localPlayer.Name, 14, theme.text, true)
-uname.Position = UDim2.fromOffset(56, 8)
-uname.Size = UDim2.fromOffset(110, 18)
-local tlabel = makeText(footer, os.date("%a %d %b %H:%M"), 12, theme.muted, false)
-tlabel.Position = UDim2.fromOffset(56, 28)
-tlabel.Size = UDim2.fromOffset(110, 16)
-
--- Snap sidebar to the left of the main window and match height
-local function placeSidebar()
-	local pos, sz = main.AbsolutePosition, main.AbsoluteSize
-	sidebarWin.Size = UDim2.fromOffset(190, sz.Y)
-	sidebarWin.Position = UDim2.fromOffset(pos.X - 190, pos.Y)
+-- Sidebar navigation button click logic
+for idx, catName in ipairs(categories) do
+    local navButton = sidebar:FindFirstChild("Nav"..catName)
+    if navButton then
+        navButton.MouseButton1Click:Connect(function()
+            if activeCategoryIndex == idx then return end
+            -- Hide old active content and reset its nav button
+            categoryContentFrames[activeCategoryIndex].Visible = false
+            local oldButton = sidebar:FindFirstChild("Nav"..categories[activeCategoryIndex])
+            if oldButton then
+                oldButton.TextColor3 = COLORS.TEXT_SECONDARY
+                oldButton.FontFace = fontInter
+                oldButton.BackgroundTransparency = 1
+                local oldHL = oldButton:FindFirstChild("Highlight")
+                if oldHL then oldHL.Visible = false end
+            end
+            -- Show new content and set active styles
+            activeCategoryIndex = idx
+            categoryContentFrames[idx].Visible = true
+            navButton.TextColor3 = COLORS.TEXT_PRIMARY
+            navButton.FontFace = fontInterBold
+            navButton.BackgroundColor3 = COLORS.ACCENT_PRIMARY
+            navButton.BackgroundTransparency = 0.85
+            local hl = navButton:FindFirstChild("Highlight")
+            if hl then hl.Visible = true end
+        end)
+    end
 end
 
-task.defer(placeSidebar)
-main:GetPropertyChangedSignal("Position"):Connect(placeSidebar)
-main:GetPropertyChangedSignal("Size"):Connect(placeSidebar)
-
--- CONTENT AREA
-local content = Instance.new("Frame")
-content.Name = "Content"
-content.BackgroundColor3 = theme.bg
-content.BackgroundTransparency = 0.25
-content.BorderSizePixel = 0
-content.Position = UDim2.fromOffset(0, 0)
-content.Size = UDim2.new(1, 0, 1, 0)
-content.Parent = body
-
--- Two-column layout
-local contentPad = pad(content, 16, 16, 16, 16)
-local columns = Instance.new("UIGridLayout")
-columns.CellPadding = UDim2.fromOffset(16, 16)
-columns.CellSize = UDim2.new(0.5, -8, 1, 0) -- two columns
-columns.FillDirectionMaxCells = 2
-columns.SortOrder = Enum.SortOrder.LayoutOrder
-columns.HorizontalAlignment = Enum.HorizontalAlignment.Left
-columns.VerticalAlignment = Enum.VerticalAlignment.Top
-columns.Parent = content
-
--- GroupBox factory
-local function groupBox(titleText)
-	local box = Instance.new("Frame")
-	box.Name = titleText:gsub(" ","") .. "Box"
-	box.BackgroundColor3 = theme.bg
-	box.BorderSizePixel = 0
-	box.Size = UDim2.new(0, 0, 1, 0) -- grid will size it
-	box.Parent = content
-	round(box, 8)
-	stroke(box, theme.subtle, 1)
-
-	local header = Instance.new("Frame")
-	header.Name = "Header"
-	header.BackgroundTransparency = 1
-	header.Size = UDim2.new(1, -16, 0, 34)
-	header.Position = UDim2.fromOffset(8, 6)
-	header.Parent = box
-
-	local hLabel = makeText(header, titleText, 16, theme.text, true)
-	hLabel.Size = UDim2.new(1, 0, 1, 0)
-
-	local sep = Instance.new("Frame")
-	sep.BackgroundColor3 = theme.subtle
-	sep.BorderSizePixel = 0
-	sep.Size = UDim2.new(1, -16, 0, 1)
-	sep.Position = UDim2.fromOffset(8, 40)
-	sep.Parent = box
-
-	local area = Instance.new("Frame")
-	area.Name = "Area"
-	area.BackgroundTransparency = 1
-	area.Position = UDim2.fromOffset(8, 48)
-	area.Size = UDim2.new(1, -16, 1, -56)
-	area.Parent = box
-
-	local scroll = Instance.new("ScrollingFrame")
-	scroll.Name = "Scroll"
-	scroll.BackgroundTransparency = 1
-	scroll.Size = UDim2.fromScale(1, 1)
-	scroll.CanvasSize = UDim2.new(0, 0, 0, 0)
-	scroll.ScrollBarThickness = 3
-	scroll.ScrollBarImageColor3 = theme.stroke
-	scroll.Parent = area
-	pad(scroll, 4, 4, 4, 4)
-
-	local layout = vlist(scroll, 10)
-	layout:GetPropertyChangedSignal("AbsoluteContentSize"):Connect(function()
-		scroll.CanvasSize = UDim2.fromOffset(0, layout.AbsoluteContentSize.Y + 8)
-	end)
-
-	return box, scroll
-end
-
--- Controls factories
-local State = {}
-
-local function rowContainer(parent)
-	local r = Instance.new("Frame")
-	r.BackgroundTransparency = 1
-	r.Size = UDim2.new(1, 0, 0, 32)
-	r.Parent = parent
-	hlist(r, 8)
-	return r
-end
-
-local function Toggle(parent, label, key, default, callback)
-	local row = rowContainer(parent)
-	row.Size = UDim2.new(1, 0, 0, 30)
-	local tLabel = makeText(row, label, 14, theme.muted, false)
-	tLabel.Size = UDim2.new(1, -60, 1, 0)
-
-	local btn = Instance.new("TextButton")
-	btn.Text = ""
-	btn.AutoButtonColor = false
-	btn.Size = UDim2.fromOffset(46, 24)
-	btn.BackgroundColor3 = theme.subtle
-	btn.Parent = row
-	round(btn, 12)
-	stroke(btn, theme.stroke, 1)
-
-	local knob = Instance.new("Frame")
-	knob.Size = UDim2.fromOffset(20, 20)
-	knob.Position = UDim2.fromOffset(2, 2)
-	knob.BackgroundColor3 = theme.muted
-	knob.Parent = btn
-	round(knob, 10)
-
-	local on = default or false
-	State[key] = on
-
-	local function render()
-		if on then
-			btn.BackgroundColor3 = theme.accent
-			knob.Position = UDim2.fromOffset(24, 2)
-			knob.BackgroundColor3 = Color3.fromRGB(255,255,255)
-		else
-			btn.BackgroundColor3 = theme.subtle
-			knob.Position = UDim2.fromOffset(2, 2)
-			knob.BackgroundColor3 = theme.muted
-		end
-	end
-
-	btn.MouseButton1Click:Connect(function()
-		on = not on
-		State[key] = on
-		render()
-		if callback then callback(on) end
-	end)
-
-	render()
-	return setmetatable({}, {__index = {Set = function(_, v) on=v State[key]=v render() end}})
-end
-
-local function Slider(parent, label, key, min, max, default, step, callback)
-	local row = rowContainer(parent)
-	row.Size = UDim2.new(1, 0, 0, 46)
-	local tLabel = makeText(row, label, 14, theme.muted, false)
-	tLabel.Size = UDim2.new(1, 0, 0, 16)
-	tLabel.LayoutOrder = 1
-
-	local container = Instance.new("Frame")
-	container.Size = UDim2.new(1, 0, 0, 24)
-	container.BackgroundColor3 = theme.subtle
-	container.Parent = row
-	round(container, 6)
-	stroke(container, theme.stroke, 1)
-
-	local fill = Instance.new("Frame")
-	fill.Size = UDim2.fromScale(0, 1)
-	fill.BackgroundColor3 = theme.accent
-	fill.BorderSizePixel = 0
-	fill.Parent = container
-round(fill, 6)
-
-	-- slider thumb
-	local thumb = Instance.new("Frame")
-	thumb.Size = UDim2.fromOffset(12, 12)
-	thumb.Position = UDim2.fromOffset(0, 6)
-	thumb.BackgroundColor3 = theme.accent
-	thumb.BorderSizePixel = 0
-	thumb.Parent = container
-	round(thumb, 6)
-	stroke(thumb, Color3.fromRGB(255,255,255), 1)
-
-	local drag = Instance.new("Frame")
-	drag.BackgroundTransparency = 1
-	drag.Size = UDim2.fromScale(1, 1)
-	drag.Parent = container
-
-	local valText = makeText(container, "", 12, theme.text, false)
-	valText.Size = UDim2.new(1, -8, 1, 0)
-	valText.Position = UDim2.fromOffset(8, 0)
-	valText.TextXAlignment = Enum.TextXAlignment.Right
-
-	min = min or 0; max = max or 100
-	step = step or 1
-	local value = math.clamp(default or min, min, max)
-	State[key] = value
-
-	local function percentFromValue(v)
-		return (v - min) / (max - min)
-	end
-
-	local function valueFromX(x)
-		local abs = container.AbsoluteSize.X
-		local p = math.clamp(x / abs, 0, 1)
-		local raw = min + (max - min) * p
-		local snapped = math.floor((raw + step/2) / step) * step
-		return math.clamp(snapped, min, max)
-	end
-
-local function render()
-		local p = percentFromValue(value)
-		fill.Size = UDim2.fromScale(p, 1)
-		valText.Text = string.format("%s", tostring(value))
-		local abs = container.AbsoluteSize.X
-		local x = math.clamp(p * abs, 6, math.max(6, abs - 6))
-		thumb.Position = UDim2.fromOffset(x - 6, 6)
-	end
-	container:GetPropertyChangedSignal("AbsoluteSize"):Connect(render)
-
-	local sliding = false
-	drag.InputBegan:Connect(function(input)
-		if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
-			sliding = true
-			if input.UserInputType == Enum.UserInputType.MouseButton1 then
-				value = valueFromX((UIS:GetMouseLocation() - Vector2.new(container.AbsolutePosition.X, 0)).X)
-				State[key] = value
-				render()
-				if callback then callback(value) end
-			end
-			input.Changed:Connect(function()
-				if input.UserInputState == Enum.UserInputState.End then sliding = false end
-			end)
-		end
-	end)
-
-	UIS.InputChanged:Connect(function(input)
-		if sliding and (input.UserInputType == Enum.UserInputType.MouseMovement or input.UserInputType == Enum.UserInputType.Touch) then
-			value = valueFromX((UIS:GetMouseLocation() - Vector2.new(container.AbsolutePosition.X, 0)).X)
-			State[key] = value
-			render()
-			if callback then callback(value) end
-		end
-	end)
-
-	render()
-	return setmetatable({}, {__index = {Set = function(_, v) value=math.clamp(v,min,max) State[key]=value render() end}})
-end
-
-local function Dropdown(parent, label, key, items, default, callback)
-	items = items or {"Off"}
-	local row = rowContainer(parent)
-	row.Size = UDim2.new(1, 0, 0, 64)
-
-	local tLabel = makeText(row, label, 14, theme.muted, false)
-	tLabel.Size = UDim2.new(1, 0, 0, 16)
-
-	local box = Instance.new("TextButton")
-	box.Text = ""
-	box.AutoButtonColor = false
-	box.Size = UDim2.new(1, 0, 0, 28)
-	box.BackgroundColor3 = theme.subtle
-	box.Parent = row
-	round(box, 6)
-	stroke(box, theme.stroke, 1)
-
-	local current = makeText(box, default or items[1], 14, theme.text, false)
-	current.Size = UDim2.new(1, -32, 1, 0)
-	current.Position = UDim2.fromOffset(8, 0)
-
-	local caret = makeText(box, "▼", 14, theme.muted, false)
-	caret.Size = UDim2.fromOffset(24, 28)
-	caret.Position = UDim2.new(1, -24, 0, 0)
-	caret.TextXAlignment = Enum.TextXAlignment.Center
-
-	local list = Instance.new("Frame")
-	list.Visible = false
-	list.BackgroundColor3 = theme.subtle
-	list.BorderSizePixel = 0
-	list.Size = UDim2.new(1, 0, 0, 28 * math.min(#items, 6))
-	list.Position = UDim2.fromOffset(0, 30)
-	list.Parent = row
-	round(list, 6)
-	stroke(list, theme.stroke, 1)
-	pad(list, 4, 4, 4, 4)
-	local l = vlist(list, 4)
-
-	local value = default or items[1]
-	State[key] = value
-
-	local function setValue(v)
-		value = v
-		State[key] = v
-		current.Text = v
-		if callback then callback(v) end
-	end
-
-	for i, it in ipairs(items) do
-		local opt = Instance.new("TextButton")
-		opt.Text = it
-		opt.Font = Enum.Font.Gotham
-		opt.TextSize = 14
-		opt.TextColor3 = theme.text
-		opt.AutoButtonColor = false
-		opt.BackgroundColor3 = theme.bg
-		opt.Size = UDim2.new(1, 0, 0, 24)
-		opt.Parent = list
-		round(opt, 4)
-		stroke(opt, theme.stroke, 1)
-		opt.MouseEnter:Connect(function() tween(opt, nil, {BackgroundColor3 = theme.panel}) end)
-		opt.MouseLeave:Connect(function() tween(opt, nil, {BackgroundColor3 = theme.bg}) end)
-		opt.MouseButton1Click:Connect(function()
-			setValue(it)
-			list.Visible = false
-		end)
-	end
-
-	box.MouseButton1Click:Connect(function()
-		list.Visible = not list.Visible
-	end)
-
-	return setmetatable({}, {__index = {Set = function(_, v) setValue(v) end}})
-end
-
--- GROUPS
-local leftBox, leftScroll = groupBox("Anti-aimbot angles")
-leftBox.LayoutOrder = 1
-local rightBox, rightScroll = groupBox("Fake lag")
-rightBox.LayoutOrder = 2
-
--- LEFT: Anti-aimbot angles
-Toggle(leftScroll, "Enabled", "aa_enabled", true)
-Dropdown(leftScroll, "Pitch", "aa_pitch", {"Off","Down","Up","Zero"}, "Off")
-Dropdown(leftScroll, "Yaw base", "aa_yaw_base", {"Local view","At targets","Manual"}, "Local view")
-Slider(leftScroll, "Yaw", "aa_yaw", -180, 180, 0, 1)
-Dropdown(leftScroll, "Yaw jitter", "aa_yaw_jitter", {"Off","Center","Random","Offset"}, "Off")
-Slider(leftScroll, "Body yaw", "aa_body_yaw", 0, 180, 0, 1)
-Dropdown(leftScroll, "Freestanding body yaw", "aa_fs_body_yaw", {"Off","Default","Jitter"}, "Off")
-Slider(leftScroll, "Edge yaw", "aa_edge_yaw", 0, 180, 0, 1)
-Dropdown(leftScroll, "Freestanding", "aa_freestanding", {"Off","On","Peek only","Always"}, "Off")
-
--- RIGHT: Fake lag
-Toggle(rightScroll, "Enabled", "fl_enabled", true)
-Dropdown(rightScroll, "Amount", "fl_amount", {"Static","Adaptive","Dynamic"}, "Dynamic")
-Slider(rightScroll, "Variance", "fl_variance", 0, 100, 0, 1)
-Slider(rightScroll, "Limit", "fl_limit", 0, 16, 8, 1)
-
-local otherSep = makeText(rightScroll, "Other", 14, theme.muted, true)
-otherSep.Size = UDim2.new(1, 0, 0, 18)
-
-Dropdown(rightScroll, "Slow motion type", "slowmo_type", {"Favor high speed","Favor distance","Balanced"}, "Favor high speed")
-Dropdown(rightScroll, "Leg movement", "leg_movement", {"Off","Always slide","While moving","While airborne"}, "Off")
-Toggle(rightScroll, "On shot anti-aim", "on_shot_aa", false)
-Toggle(rightScroll, "Fake peek", "fake_peek", false)
-
--- SAVE BUTTON ACTION
-saveBtn.MouseButton1Click:Connect(function()
-	-- Simple print-out of current state; replace with datastore/serialization if needed
-	local json
-	pcall(function()
-		json = game:GetService("HttpService"):JSONEncode(State)
-	end)
-	if json then
-		print("[StepByUI] Saved state:", json)
-	else
-		print("[StepByUI] Current state:")
-		for k, v in pairs(State) do
-			print("  ", k, v)
-		end
-	end
-	-- Flash feedback
-	saveBtn.Text = "Saved"
-	tween(saveBtn, TweenInfo.new(0.2), {BackgroundColor3 = theme.accent})
-	task.delay(0.6, function()
-		tween(saveBtn, TweenInfo.new(0.2), {BackgroundColor3 = theme.subtle})
-		saveBtn.Text = "Save"
-	end)
+-- Dropdown (Mode) toggle script (placed after content frames so it overlaps on top)
+modeDropdown.MouseButton1Click:Connect(function()
+    -- Position the options frame below the dropdown
+    local absPos = modeDropdown.AbsolutePosition
+    modeOptionsFrame.Position = UDim2.new(0, absPos.X - panel.AbsolutePosition.X,
+                                         0, absPos.Y - panel.AbsolutePosition.Y + modeDropdown.AbsoluteSize.Y)
+    modeOptionsFrame.ZIndex = 5
+    modeDropdown.ZIndex = 5
+    for _, btn in ipairs(modeOptionsFrame:GetChildren()) do
+        if btn:IsA("TextButton") then btn.ZIndex = 5 end
+    end
+    modeOptionsFrame.Visible = not modeOptionsFrame.Visible
 end)
-
--- ESC to toggle visibility
-local open = true
-UIS.InputBegan:Connect(function(input, gp)
-	if gp then return end
-if input.KeyCode == Enum.KeyCode.RightControl or input.KeyCode == Enum.KeyCode.F1 then
-		open = not open
-		main.Visible = open
-		if sidebarWin then sidebarWin.Visible = open end
-		if blur then blur.Enabled = open end
-	end
-end)
-
-print("[StepByUI] UI loaded (RightControl or F1 to toggle)")
