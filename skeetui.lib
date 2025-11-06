@@ -1,700 +1,347 @@
 --[[
-    GameSense UI Replica in Roblox
+  GameSense UI Replica (Client-Sided / LocalScript)
+  -------------------------------------------------
+  • Drop this script into StarterPlayer > StarterPlayerScripts (as a LocalScript)
+  • This version focuses on a pixel-accurate **SIDEBAR** replica like your second screenshot:
+      - Lime "GAMESENSE" header, pill-selected item, green dot indicator
+      - Section headers (RageBot, Legitbot, Visuals, Miscellaneous)
+      - Icon + label for each entry
+      - Soft gradient glow along the left edge and glassy nav pills
+      - Player card with avatar at the bottom-left
+  • All assets rely on built-in primitives (no external models required).
 
-    This script builds a user interface in Roblox that closely follows the design of the
-    GameSense cheat menu shown in the provided screenshot.  Everything is created locally
-    on the client and does not require any server communication.  The layout consists of
-    a left navigation bar, a top bar with a save button and simple icons, and a main
-    content area with grouped sections.  Sliders, toggles and dropdowns are implemented
-    with smooth tweens to mimic the original interface behaviour.  You can modify
-    the `Theme` table to change colours and sizes if desired.
-
-    Place this script into a LocalScript inside `StarterGui` or execute it via a
-    loadstring call.  All UI elements are created dynamically at runtime.
+  NOTE: Purely UI. No gameplay is wired.
 ]]
 
--- services
+--// Services
 local Players = game:GetService("Players")
 local UIS = game:GetService("UserInputService")
 local TweenService = game:GetService("TweenService")
 
--- constants / theme configuration
+--// Theme
 local Theme = {
-    BackgroundColor = Color3.fromRGB(18, 18, 18),
-    PanelColor      = Color3.fromRGB(24, 24, 24),
-    AccentColor     = Color3.fromRGB(124, 230, 0), -- green accent
-    DarkAccent      = Color3.fromRGB(42, 42, 42),
-    TextColor       = Color3.fromRGB(220, 220, 220),
-    SubTextColor    = Color3.fromRGB(150, 150, 150),
-    Font            = Enum.Font.Gotham,
-    NavigationWidth = 140,
-    TopbarHeight    = 36,
-    CornerRadius    = 6,
-    SliderHeight    = 18,
-    ToggleWidth     = 32,
-    ToggleHeight    = 14,
+  bg           = Color3.fromRGB(16,16,16),
+  panel        = Color3.fromRGB(22,22,22),
+  panelAlt     = Color3.fromRGB(26,26,26),
+  stroke       = Color3.fromRGB(35,35,35),
+  accent       = Color3.fromRGB(120, 230, 80), -- gamesense green
+  text         = Color3.fromRGB(230,230,230),
+  textDim      = Color3.fromRGB(155,155,155),
+  navWidth     = 210,
+  topbarH      = 52,
 }
 
--- helper function to create UI elements succinctly
+--// Helpers
 local function Create(className, props, children)
-    local obj = Instance.new(className)
-    for k, v in pairs(props) do
-        obj[k] = v
-    end
-    if children then
-        for _, child in ipairs(children) do
-            child.Parent = obj
-        end
-    end
-    return obj
+  local o = Instance.new(className)
+  for k,v in pairs(props or {}) do o[k] = v end
+  if children then for _,c in ipairs(children) do c.Parent = o end end
+  return o
+end
+local function round(parent, r)
+  Create("UICorner", {CornerRadius = UDim.new(0, r or 10), Parent = parent})
+end
+local function stroke(parent, c, t)
+  Create("UIStroke", {Color = c or Theme.stroke, Thickness = t or 1, ApplyStrokeMode = Enum.ApplyStrokeMode.Border, Parent = parent})
+end
+local function pad(parent, l,t,r,b)
+  Create("UIPadding", {PaddingLeft=UDim.new(0,l or 0), PaddingTop=UDim.new(0,t or 0), PaddingRight=UDim.new(0,r or 0), PaddingBottom=UDim.new(0,b or 0), Parent=parent})
+end
+local function list(parent, padding)
+  return Create("UIListLayout", {Parent=parent, Padding = UDim.new(0, padding or 8), SortOrder = Enum.SortOrder.LayoutOrder})
 end
 
--- build the root ScreenGui
+--// Root GUI
 local player = Players.LocalPlayer
-local screenGui = Create("ScreenGui", {
-    Name = "GameSenseUIReplica",
-    Parent = player:WaitForChild("PlayerGui"),
-    ZIndexBehavior = Enum.ZIndexBehavior.Sibling
-})
+local gui = Create("ScreenGui", {Name = "GameSenseReplica", ResetOnSpawn=false, IgnoreGuiInset=true, ZIndexBehavior=Enum.ZIndexBehavior.Sibling, Parent = player:WaitForChild("PlayerGui")})
 
--- apply UI corners helper
-local function roundify(frame, radius)
-    local corner = Instance.new("UICorner")
-    corner.CornerRadius = UDim.new(0, radius or Theme.CornerRadius)
-    corner.Parent = frame
-end
+-- Window
+local window = Create("Frame", {Size=UDim2.new(0, 980, 0, 600), AnchorPoint=Vector2.new(0.5,0.5), Position=UDim2.new(0.5,0,0.5,0), BackgroundColor3=Theme.panel, BorderSizePixel=0, Parent=gui})
+round(window, 12)
+stroke(window, Theme.stroke, 1)
 
--- build main container
-local container = Create("Frame", {
-    Name = "Container",
-    Parent = screenGui,
-    AnchorPoint = Vector2.new(0.5, 0.5),
-    Position = UDim2.new(0.5, 0, 0.5, 0),
-    Size = UDim2.new(0, 780, 0, 420),
-    BackgroundColor3 = Theme.BackgroundColor,
-    BorderSizePixel = 0,
-})
-roundify(container)
+-- soft shadow
+Create("ImageLabel", {Parent=window, BackgroundTransparency=1, Image="rbxassetid://5028857084", ScaleType=Enum.ScaleType.Slice, SliceCenter=Rect.new(24,24,276,276), ImageTransparency=0.55, Size=UDim2.new(1,40,1,40), Position=UDim2.new(0,-20,0,-10), ZIndex=0})
 
--- shadow behind container for depth
-local shadow = Create("ImageLabel", {
-    Name = "Shadow",
-    Parent = container,
-    Position = UDim2.new(0, 4, 0, 4),
-    Size = UDim2.new(1, 8, 1, 8),
-    BackgroundTransparency = 1,
-    Image = "rbxassetid://1316045217", -- generic drop shadow asset
-    ImageTransparency = 0.6,
-    ZIndex = -1
-})
+-- Header
+local header = Create("Frame", {Parent=window, Size=UDim2.new(1,0,0,Theme.topbarH), BackgroundColor3=Theme.panelAlt, BorderSizePixel=0})
+round(header, 12)
+pad(header, 16,10,16,10)
+local hl = list(header, 10); hl.FillDirection = Enum.FillDirection.Horizontal; hl.VerticalAlignment = Enum.VerticalAlignment.Center
 
--- top bar
-local topBar = Create("Frame", {
-    Name = "TopBar",
-    Parent = container,
-    Position = UDim2.new(0, 0, 0, 0),
-    Size = UDim2.new(1, 0, 0, Theme.TopbarHeight),
-    BackgroundColor3 = Theme.PanelColor,
-    BorderSizePixel = 0,
-})
-roundify(topBar, Theme.CornerRadius)
+Create("TextLabel", {Parent=header, Size=UDim2.new(0, 170, 1, -10), BackgroundTransparency=1, Text="GAMESENSE", TextColor3=Theme.accent, TextXAlignment=Enum.TextXAlignment.Left, FontFace=Font.new("rbxasset://fonts/families/GothamSSm.json", Enum.FontWeight.Medium), TextSize=22, LayoutOrder=1})
 
--- title label
-local titleLabel = Create("TextLabel", {
-    Name = "TitleLabel",
-    Parent = topBar,
-    Position = UDim2.new(0, 16, 0, 0),
-    Size = UDim2.new(0, 200, 1, 0),
-    BackgroundTransparency = 1,
-    Text = "GAMESENSE",
-    TextColor3 = Theme.AccentColor,
-    Font = Theme.Font,
-    TextSize = 22,
-    TextXAlignment = Enum.TextXAlignment.Left
-})
+local spacer = Create("Frame", {Parent=header, BackgroundTransparency=1, Size=UDim2.new(1,-360,1,-10), LayoutOrder=2})
 
--- save button
-local saveButton = Create("TextButton", {
-    Name = "SaveButton",
-    Parent = topBar,
-    AnchorPoint = Vector2.new(0.5, 0.5),
-    Position = UDim2.new(0.32, 0, 0.5, 0),
-    Size = UDim2.new(0, 64, 0, 22),
-    BackgroundColor3 = Theme.DarkAccent,
-    Text = "Save",
-    TextColor3 = Theme.TextColor,
-    Font = Theme.Font,
-    TextSize = 14,
-    AutoButtonColor = false,
-    BorderSizePixel = 0
-})
-roundify(saveButton, Theme.CornerRadius)
--- add subtle hover effect to Save button
-saveButton.MouseEnter:Connect(function()
-    TweenService:Create(saveButton, TweenInfo.new(0.15), {BackgroundColor3 = Theme.AccentColor * 0.8}):Play()
+local saveBtn = Create("TextButton", {Parent=header, Text="Save", Size=UDim2.new(0,88,0,30), BackgroundColor3=Theme.accent, TextColor3=Theme.bg, AutoButtonColor=false, FontFace=Font.new("rbxasset://fonts/families/GothamSSm.json", Enum.FontWeight.Medium), TextSize=16, LayoutOrder=3, BorderSizePixel=0})
+round(saveBtn, 10)
+
+-- Sidebar
+local sidebar = Create("Frame", {Parent=window, Position=UDim2.new(0,0,0,Theme.topbarH), Size=UDim2.new(0, Theme.navWidth, 1, -Theme.topbarH), BackgroundColor3=Theme.panel, BorderSizePixel=0})
+pad(sidebar, 12,14,12,14)
+
+-- left glow gradient
+local glow = Create("ImageLabel", {Parent=sidebar, BackgroundTransparency=1, Image="rbxassetid://7131267197", ImageTransparency=0.8, ImageColor3=Theme.accent, Rotation=90, Size=UDim2.new(1.2,0,0,220), Position=UDim2.new(-0.1,0,0,-40), ZIndex=0})
+
+local navScroll = Create("ScrollingFrame", {Parent=sidebar, Size=UDim2.new(1,0,1,-70), BackgroundTransparency=1, ScrollBarThickness=4, BorderSizePixel=0, CanvasSize=UDim2.new(0,0,0,0)})
+local navLayout = list(navScroll, 6)
+
+-- bottom player card
+local bottomCard = Create("Frame", {Parent=sidebar, AnchorPoint=Vector2.new(0,1), Position=UDim2.new(0,0,1,0), Size=UDim2.new(1,0,0,56), BackgroundColor3=Theme.panelAlt, BorderSizePixel=0})
+round(bottomCard, 10)
+stroke(bottomCard, Theme.stroke, 1)
+pad(bottomCard, 8,8,8,8)
+local plLayout = list(bottomCard, 8); plLayout.FillDirection = Enum.FillDirection.Horizontal; plLayout.VerticalAlignment = Enum.VerticalAlignment.Center
+
+local headImage = Create("ImageLabel", {Parent=bottomCard, Size=UDim2.new(0,40,0,40), BackgroundColor3=Color3.fromRGB(34,34,34)})
+round(headImage, 20)
+-- attempt fetching thumbnail at runtime
+local success, content = pcall(function()
+  return Players:GetUserThumbnailAsync(player.UserId, Enum.ThumbnailType.HeadShot, Enum.ThumbnailSize.Size100x100)
 end)
-saveButton.MouseLeave:Connect(function()
-    TweenService:Create(saveButton, TweenInfo.new(0.15), {BackgroundColor3 = Theme.DarkAccent}):Play()
-end)
-saveButton.MouseButton1Click:Connect(function()
-    -- placeholder for save behaviour
-    print("Settings saved!")
-end)
+if success then headImage.Image = content; headImage.BackgroundTransparency = 1 end
 
--- search icon (using unicode magnifying glass)
-local searchButton = Create("TextButton", {
-    Parent = topBar,
-    AnchorPoint = Vector2.new(1, 0.5),
-    Position = UDim2.new(1, -12, 0.5, 0),
-    Size = UDim2.new(0, 26, 0, 26),
-    BackgroundColor3 = Theme.DarkAccent,
-    Text = "🔍",
-    TextColor3 = Theme.TextColor,
-    Font = Theme.Font,
-    TextSize = 16,
-    AutoButtonColor = false,
-    BorderSizePixel = 0,
-})
-roundify(searchButton, Theme.CornerRadius)
+Create("TextLabel", {Parent=bottomCard, Size=UDim2.new(1,-52,1,0), BackgroundTransparency=1, Text=player.DisplayName, TextXAlignment=Enum.TextXAlignment.Left, TextColor3=Theme.text, TextSize=14, FontFace=Font.new("rbxasset://fonts/families/GothamSSm.json")})
 
-local gearButton = Create("TextButton", {
-    Parent = topBar,
-    AnchorPoint = Vector2.new(1, 0.5),
-    Position = UDim2.new(1, -48, 0.5, 0),
-    Size = UDim2.new(0, 26, 0, 26),
-    BackgroundColor3 = Theme.DarkAccent,
-    Text = "⚙",
-    TextColor3 = Theme.TextColor,
-    Font = Theme.Font,
-    TextSize = 16,
-    AutoButtonColor = false,
-    BorderSizePixel = 0,
-})
-roundify(gearButton, Theme.CornerRadius)
-
--- left navigation panel
-local navPanel = Create("Frame", {
-    Name = "NavigationPanel",
-    Parent = container,
-    Position = UDim2.new(0, 0, 0, Theme.TopbarHeight),
-    Size = UDim2.new(0, Theme.NavigationWidth, 1, -Theme.TopbarHeight),
-    BackgroundColor3 = Theme.PanelColor,
-    BorderSizePixel = 0,
-})
-roundify(navPanel, Theme.CornerRadius)
-
--- scrollable area for nav items
-local navList = Create("ScrollingFrame", {
-    Name = "NavList",
-    Parent = navPanel,
-    AnchorPoint = Vector2.new(0.5, 0),
-    Position = UDim2.new(0.5, 0, 0, 8),
-    Size = UDim2.new(1, -16, 1, -16),
-    BackgroundTransparency = 1,
-    BorderSizePixel = 0,
-    ScrollBarThickness = 4,
-    ScrollBarImageColor3 = Theme.DarkAccent,
-    CanvasSize = UDim2.new(0, 0, 0, 0)
-})
-
--- layout for nav items
-local navLayout = Create("UIListLayout", {
-    Parent = navList,
-    SortOrder = Enum.SortOrder.LayoutOrder,
-    Padding = UDim.new(0, 4)
-})
-
--- categories definition: each entry is either a header or item list
-local navigationDefinitions = {
-    {type = "header", text = "RageBot"},
-    {type = "item", text = "Anti Aim"},
-    {type = "header", text = "LegitBot"},
-    {type = "header", text = "Visuals"},
-    {type = "item", text = "Players"},
-    {type = "item", text = "Weapon"},
-    {type = "item", text = "Grenades"},
-    {type = "item", text = "World"},
-    {type = "item", text = "View"},
-    {type = "item", text = "Bomb"},
-    {type = "header", text = "Miscellaneous"},
-    {type = "item", text = "Main"},
-    {type = "item", text = "Inventory"},
-    {type = "item", text = "Configs"},
+-- NAV DATA (with icons)
+-- We use unicode emoji for a lightweight, dependency-free icon set.
+local navSpec = {
+  { kind="section", label="RageBot" },
+  { kind="item",   label="Anti Aim",     icon="◉" },
+  { kind="section", label="Legitbot" },
+  { kind="section", label="Visuals" },
+  { kind="item",   label="Players",     icon="👤" },
+  { kind="item",   label="Weapon",      icon="🔫" },
+  { kind="item",   label="Grenades",    icon="🧨" },
+  { kind="item",   label="World",       icon="🌍" },
+  { kind="item",   label="View",        icon="👁" },
+  { kind="item",   label="Bomb",        icon="💣" },
+  { kind="section", label="Miscellaneous" },
+  { kind="item",   label="Main",        icon="🏠" },
+  { kind="item",   label="Inventory",   icon="🎒" },
+  { kind="item",   label="Lua",         icon="{ }" },
+  { kind="item",   label="Configs",     icon="⚙" },
 }
 
--- keep track of pages for switching
+-- page registry
 local pages = {}
-local currentPage
+local current = nil
 
--- nav item builder
-local function createNavItem(def)
-    if def.type == "header" then
-        local label = Create("TextLabel", {
-            Parent = navList,
-            Size = UDim2.new(1, 0, 0, 22),
-            BackgroundTransparency = 1,
-            Text = def.text,
-            TextColor3 = Theme.SubTextColor,
-            Font = Theme.Font,
-            TextSize = 15,
-            TextXAlignment = Enum.TextXAlignment.Left,
-        })
-        return label
-    elseif def.type == "item" then
-        local button = Create("TextButton", {
-            Parent = navList,
-            Size = UDim2.new(1, 0, 0, 26),
-            BackgroundColor3 = Theme.DarkAccent,
-            Text = def.text,
-            TextColor3 = Theme.TextColor,
-            Font = Theme.Font,
-            TextSize = 16,
-            AutoButtonColor = false,
-            BorderSizePixel = 0,
-        })
-        roundify(button, Theme.CornerRadius)
-        -- highlight on hover
-        button.MouseEnter:Connect(function()
-            TweenService:Create(button, TweenInfo.new(0.15), {BackgroundColor3 = Theme.AccentColor * 0.5}):Play()
-        end)
-        button.MouseLeave:Connect(function()
-            if currentPage ~= def.text then
-                TweenService:Create(button, TweenInfo.new(0.15), {BackgroundColor3 = Theme.DarkAccent}):Play()
-            end
-        end)
-        -- page switching logic
-        button.MouseButton1Click:Connect(function()
-            -- highlight the selected item
-            for _, navItem in pairs(navList:GetChildren()) do
-                if navItem:IsA("TextButton") then
-                    TweenService:Create(navItem, TweenInfo.new(0.15), {BackgroundColor3 = Theme.DarkAccent}):Play()
-                end
-            end
-            TweenService:Create(button, TweenInfo.new(0.15), {BackgroundColor3 = Theme.AccentColor * 0.6}):Play()
-            currentPage = def.text
-            -- display corresponding page
-            for pageName, pageFrame in pairs(pages) do
-                pageFrame.Visible = (pageName == def.text)
-            end
-        end)
-        return button
-    end
+local function makeSection(text)
+  local lbl = Create("TextLabel", {Parent=navScroll, Size=UDim2.new(1,0,0,18), BackgroundTransparency=1, Text=text, TextXAlignment=Enum.TextXAlignment.Left, TextColor3=Theme.textDim, FontFace=Font.new("rbxasset://fonts/families/GothamSSm.json", Enum.FontWeight.Medium), TextSize=13})
+  lbl.LayoutOrder = 0
 end
 
--- create nav items
-for _, def in ipairs(navigationDefinitions) do
-    createNavItem(def)
+local function makePill(text, icon)
+  local btn = Create("TextButton", {Parent=navScroll, Size=UDim2.new(1,0,0,34), BackgroundColor3=Theme.panelAlt, AutoButtonColor=false, BorderSizePixel=0, Text="", ZIndex=2})
+  round(btn, 10)
+  stroke(btn, Theme.stroke, 1)
+  pad(btn, 10,0,10,0)
+  local row = list(btn, 8); row.FillDirection = Enum.FillDirection.Horizontal; row.VerticalAlignment = Enum.VerticalAlignment.Center
+
+  local dot = Create("Frame", {Parent=btn, Size=UDim2.new(0,12,0,12), BackgroundColor3=Theme.accent})
+  round(dot, 6)
+  dot.Visible = false -- only for selected item
+
+  local iconLbl = Create("TextLabel", {Parent=btn, BackgroundTransparency=1, Text=icon or "•", TextColor3=Theme.accent, TextSize=16, FontFace=Font.new("rbxasset://fonts/families/GothamSSm.json"), Size=UDim2.new(0,18,1,0)})
+
+  local txt = Create("TextLabel", {Parent=btn, BackgroundTransparency=1, Text=text, TextColor3=Theme.text, TextXAlignment=Enum.TextXAlignment.Left, FontFace=Font.new("rbxasset://fonts/families/GothamSSm.json"), TextSize=15, Size=UDim2.new(1,-36,1,0)})
+
+  local function setSelected(sel)
+    dot.Visible = sel
+    TweenService:Create(btn, TweenInfo.new(0.12, Enum.EasingStyle.Sine, Enum.EasingDirection.Out), {BackgroundColor3 = sel and Color3.fromRGB(44,44,44) or Theme.panelAlt}):Play()
+    iconLbl.TextColor3 = sel and Theme.accent or Theme.accent
+    txt.TextColor3 = sel and Theme.text or Theme.text
+  end
+
+  btn.MouseEnter:Connect(function()
+    if current ~= text then TweenService:Create(btn, TweenInfo.new(0.1), {BackgroundColor3 = Color3.fromRGB(36,36,36)}):Play() end
+  end)
+  btn.MouseLeave:Connect(function()
+    if current ~= text then TweenService:Create(btn, TweenInfo.new(0.15), {BackgroundColor3 = Theme.panelAlt}):Play() end
+  end)
+
+  btn.MouseButton1Click:Connect(function()
+    -- clear others
+    for _, child in ipairs(navScroll:GetChildren()) do
+      if child:IsA("TextButton") and child ~= btn then
+        child:SetAttribute("selected", false)
+        child:GetChildren()[1].Visible = false -- dot
+        TweenService:Create(child, TweenInfo.new(0.15), {BackgroundColor3 = Theme.panelAlt}):Play()
+      end
+    end
+    current = text
+    setSelected(true)
+    for name, page in pairs(pages) do
+      page.Visible = (name == text)
+    end
+  end)
+
+  return btn
 end
 
--- adjust canvas size after items created
-local function updateCanvasSize()
-    local totalHeight = 0
-    for _, child in pairs(navList:GetChildren()) do
-        if child:IsA("GuiObject") then
-            totalHeight = totalHeight + child.AbsoluteSize.Y + navLayout.Padding.Offset
-        end
-    end
-    navList.CanvasSize = UDim2.new(0, 0, 0, totalHeight + 16)
-end
-updateCanvasSize()
-
--- right panel (content area)
-local contentArea = Create("Frame", {
-    Name = "ContentArea",
-    Parent = container,
-    Position = UDim2.new(0, Theme.NavigationWidth + 8, 0, Theme.TopbarHeight + 8),
-    Size = UDim2.new(1, -Theme.NavigationWidth - 16, 1, -Theme.TopbarHeight - 16),
-    BackgroundTransparency = 1,
-    ClipsDescendants = true
-})
-
--- UIList for pages (stack them on top of each other, only one visible at once)
--- We'll manage visible property manually
-
--- helper to make a toggle control
-local function createToggle(parent, labelText, default)
-    local height = 24
-    local holder = Create("Frame", {
-        Parent = parent,
-        Size = UDim2.new(1, 0, 0, height),
-        BackgroundTransparency = 1,
-    })
-    local textLabel = Create("TextLabel", {
-        Parent = holder,
-        Position = UDim2.new(0, 0, 0, 0),
-        Size = UDim2.new(1, -50, 1, 0),
-        BackgroundTransparency = 1,
-        Text = labelText,
-        TextColor3 = Theme.TextColor,
-        Font = Theme.Font,
-        TextSize = 15,
-        TextXAlignment = Enum.TextXAlignment.Left
-    })
-    -- toggle button background
-    local toggleBG = Create("Frame", {
-        Parent = holder,
-        AnchorPoint = Vector2.new(1, 0.5),
-        Position = UDim2.new(1, -8, 0.5, 0),
-        Size = UDim2.new(0, Theme.ToggleWidth, 0, Theme.ToggleHeight),
-        BackgroundColor3 = Theme.DarkAccent,
-        BorderSizePixel = 0,
-    })
-    roundify(toggleBG, Theme.ToggleHeight/2)
-    -- toggle knob
-    local knob = Create("Frame", {
-        Parent = toggleBG,
-        Position = UDim2.new(default and 1 or 0, default and -Theme.ToggleHeight + 2 or 2, 0.5, 0),
-        AnchorPoint = Vector2.new(0, 0.5),
-        Size = UDim2.new(0, Theme.ToggleHeight - 4, 0, Theme.ToggleHeight - 4),
-        BackgroundColor3 = default and Theme.AccentColor or Theme.SubTextColor,
-        BorderSizePixel = 0,
-    })
-    roundify(knob, (Theme.ToggleHeight - 4)/2)
-
-    local state = default or false
-    local function setState(on)
-        state = on
-        local destX = on and (Theme.ToggleWidth - Theme.ToggleHeight + 2) or 2
-        local destColor = on and Theme.AccentColor or Theme.SubTextColor
-        TweenService:Create(knob, TweenInfo.new(0.15), {Position = UDim2.new(0, destX, 0.5, 0)}):Play()
-        TweenService:Create(knob, TweenInfo.new(0.15), {BackgroundColor3 = destColor}):Play()
-        -- lighten background when on
-        TweenService:Create(toggleBG, TweenInfo.new(0.15), {BackgroundColor3 = on and Theme.AccentColor * 0.4 or Theme.DarkAccent}):Play()
-    end
-    toggleBG.InputBegan:Connect(function(input)
-        if input.UserInputType == Enum.UserInputType.MouseButton1 then
-            setState(not state)
-        end
-    end)
-    -- return state function for outside access
-    return holder, function() return state end, setState
+-- Build nav
+for _, def in ipairs(navSpec) do
+  if def.kind == "section" then
+    makeSection(def.label)
+  else
+    local pill = makePill(def.label, def.icon)
+    pill.Name = "nav_"..def.label
+  end
 end
 
--- helper to create a slider control
-local function createSlider(parent, labelText, minVal, maxVal, defaultVal)
-    local height = 32
-    local holder = Create("Frame", {
-        Parent = parent,
-        Size = UDim2.new(1, 0, 0, height),
-        BackgroundTransparency = 1
-    })
-    local textLabel = Create("TextLabel", {
-        Parent = holder,
-        Position = UDim2.new(0, 0, 0, 0),
-        Size = UDim2.new(1, 0, 0, 16),
-        BackgroundTransparency = 1,
-        Text = labelText,
-        TextColor3 = Theme.TextColor,
-        Font = Theme.Font,
-        TextSize = 15,
-        TextXAlignment = Enum.TextXAlignment.Left,
-    })
-    -- value display
-    local valueLabel = Create("TextLabel", {
-        Parent = holder,
-        AnchorPoint = Vector2.new(1, 0),
-        Position = UDim2.new(1, 0, 0, 0),
-        Size = UDim2.new(0, 40, 0, 16),
-        BackgroundTransparency = 1,
-        Text = tostring(defaultVal),
-        TextColor3 = Theme.SubTextColor,
-        Font = Theme.Font,
-        TextSize = 14,
-        TextXAlignment = Enum.TextXAlignment.Right,
-    })
-    -- slider bar
-    local bar = Create("Frame", {
-        Parent = holder,
-        Position = UDim2.new(0, 0, 0, 18),
-        Size = UDim2.new(1, 0, 0, 6),
-        BackgroundColor3 = Theme.DarkAccent,
-        BorderSizePixel = 0,
-    })
-    roundify(bar, 3)
-    -- fill inside bar
-    local fill = Create("Frame", {
-        Parent = bar,
-        Size = UDim2.new((defaultVal - minVal)/(maxVal - minVal), 0, 1, 0),
-        BackgroundColor3 = Theme.AccentColor,
-        BorderSizePixel = 0,
-    })
-    roundify(fill, 3)
-    -- knob
-    local knob = Create("Frame", {
-        Parent = bar,
-        AnchorPoint = Vector2.new(0.5, 0.5),
-        Position = UDim2.new((defaultVal - minVal)/(maxVal - minVal), 0, 0.5, 0),
-        Size = UDim2.new(0, 12, 0, 12),
-        BackgroundColor3 = Theme.AccentColor,
-        BorderSizePixel = 0,
-    })
-    roundify(knob, 6)
+-- compute CanvasSize
+local function recomputeCanvas()
+  local h = 0
+  for _,c in ipairs(navScroll:GetChildren()) do
+    if c:IsA("GuiObject") then h += c.AbsoluteSize.Y + 6 end
+  end
+  navScroll.CanvasSize = UDim2.new(0,0,0,math.max(h, navScroll.AbsoluteSize.Y))
+end
+navScroll.ChildAdded:Connect(recomputeCanvas)
+navScroll.ChildRemoved:Connect(recomputeCanvas)
+UIS.InputEnded:Connect(function() task.defer(recomputeCanvas) end)
+recomputeCanvas()
 
-    local current = defaultVal
-    local dragging = false
+-- Content area
+local content = Create("Frame", {Parent=window, Position=UDim2.new(0, Theme.navWidth, 0, Theme.topbarH), Size=UDim2.new(1, -Theme.navWidth, 1, -Theme.topbarH), BackgroundTransparency=1})
 
-    local function updateFromPosition(x)
-        local absPos = bar.AbsolutePosition.X
-        local width = bar.AbsoluteSize.X
-        local percent = math.clamp((x - absPos) / width, 0, 1)
-        current = math.floor((minVal + percent * (maxVal - minVal)) * 100) / 100
-        fill.Size = UDim2.new(percent, 0, 1, 0)
-        knob.Position = UDim2.new(percent, 0, 0.5, 0)
-        valueLabel.Text = tostring(current)
-    end
-
-    bar.InputBegan:Connect(function(input)
-        if input.UserInputType == Enum.UserInputType.MouseButton1 then
-            dragging = true
-            updateFromPosition(input.Position.X)
-        end
-    end)
-    knob.InputBegan:Connect(function(input)
-        if input.UserInputType == Enum.UserInputType.MouseButton1 then
-            dragging = true
-            updateFromPosition(input.Position.X)
-        end
-    end)
-    UIS.InputChanged:Connect(function(input)
-        if dragging and input.UserInputType == Enum.UserInputType.MouseMovement then
-            updateFromPosition(input.Position.X)
-        end
-    end)
-    UIS.InputEnded:Connect(function(input)
-        if input.UserInputType == Enum.UserInputType.MouseButton1 then
-            dragging = false
-        end
-    end)
-    return holder, function() return current end, function(v)
-        current = math.clamp(v, minVal, maxVal)
-        local percent = (current - minVal)/(maxVal - minVal)
-        fill.Size = UDim2.new(percent, 0, 1, 0)
-        knob.Position = UDim2.new(percent, 0, 0.5, 0)
-        valueLabel.Text = tostring(current)
-    end
+-- Utility components (Switch, Slider, Dropdown) kept from previous version
+local Components = {}
+function Components.Switch(parent, labelText, default, onChanged)
+  local container = Create("Frame", {Parent=parent, BackgroundTransparency=1, Size=UDim2.new(1,0,0,36)})
+  local row = Create("UIListLayout", {Parent=container, Padding=UDim.new(0,8), FillDirection=Enum.FillDirection.Horizontal, VerticalAlignment=Enum.VerticalAlignment.Center})
+  local lbl = Create("TextLabel", {Parent=container, BackgroundTransparency=1, Text=labelText, TextXAlignment=Enum.TextXAlignment.Left, TextColor3=Theme.text, TextSize=14, FontFace=Font.new("rbxasset://fonts/families/GothamSSm.json"), Size=UDim2.new(1,-60,1,0)})
+  local knob = Create("Frame", {Parent=container, Size=UDim2.new(0,50,0,26), BackgroundColor3=Color3.fromRGB(34,34,34)})
+  round(knob,13); stroke(knob, Theme.stroke,1)
+  local dot = Create("Frame", {Parent=knob, Size=UDim2.new(0,22,0,22), Position=UDim2.new(0,2,0.5,-11), BackgroundColor3=default and Theme.accent or Color3.fromRGB(130,130,130)})
+  round(dot,11)
+  local state = default == true
+  local function render()
+    TweenService:Create(dot, TweenInfo.new(0.18, Enum.EasingStyle.Sine, Enum.EasingDirection.Out), {Position = UDim2.new(state and 1 or 0, state and -24 or 2, 0.5, -11), BackgroundColor3 = state and Theme.accent or Color3.fromRGB(130,130,130)}):Play()
+  end
+  knob.InputBegan:Connect(function(i)
+    if i.UserInputType == Enum.UserInputType.MouseButton1 then state = not state; render(); if onChanged then onChanged(state) end end
+  end)
+  render()
 end
 
--- helper to create dropdown control
-local function createDropdown(parent, labelText, options, defaultIndex)
-    local height = 32
-    local holder = Create("Frame", {
-        Parent = parent,
-        Size = UDim2.new(1, 0, 0, height),
-        BackgroundTransparency = 1,
-        ClipsDescendants = true,
-    })
-    local textLabel = Create("TextLabel", {
-        Parent = holder,
-        Position = UDim2.new(0, 0, 0, 0),
-        Size = UDim2.new(1, -100, 0, 16),
-        BackgroundTransparency = 1,
-        Text = labelText,
-        TextColor3 = Theme.TextColor,
-        Font = Theme.Font,
-        TextSize = 15,
-        TextXAlignment = Enum.TextXAlignment.Left,
-    })
-    -- drop button to show selection
-    local dropButton = Create("TextButton", {
-        Parent = holder,
-        AnchorPoint = Vector2.new(1, 0),
-        Position = UDim2.new(1, 0, 0, 0),
-        Size = UDim2.new(0, 100, 0, 24),
-        BackgroundColor3 = Theme.DarkAccent,
-        BorderSizePixel = 0,
-        AutoButtonColor = false,
-        TextColor3 = Theme.TextColor,
-        Font = Theme.Font,
-        TextSize = 14,
-    })
-    roundify(dropButton, Theme.CornerRadius)
-    local selected = defaultIndex or 1
-    dropButton.Text = options[selected]
-    local listHolder = Create("Frame", {
-        Parent = holder,
-        Position = UDim2.new(0, 0, 0, 24),
-        Size = UDim2.new(1, 0, 0, (#options) * 22),
-        BackgroundColor3 = Theme.PanelColor,
-        BorderSizePixel = 0,
-        Visible = false,
-        ZIndex = 4,
-    })
-    roundify(listHolder, Theme.CornerRadius)
-    local listLayout = Create("UIListLayout", {
-        Parent = listHolder,
-        SortOrder = Enum.SortOrder.LayoutOrder,
-    })
-    for i, opt in ipairs(options) do
-        local btn = Create("TextButton", {
-            Parent = listHolder,
-            Size = UDim2.new(1, 0, 0, 22),
-            BackgroundTransparency = 1,
-            BorderSizePixel = 0,
-            Text = opt,
-            TextColor3 = Theme.TextColor,
-            Font = Theme.Font,
-            TextSize = 14,
-            AutoButtonColor = false,
-        })
-        btn.MouseButton1Click:Connect(function()
-            selected = i
-            dropButton.Text = opt
-            listHolder.Visible = false
-        end)
-        btn.MouseEnter:Connect(function()
-            btn.BackgroundTransparency = 0.8
-        end)
-        btn.MouseLeave:Connect(function()
-            btn.BackgroundTransparency = 1
-        end)
-    end
-    -- open/close the list on click
-    dropButton.MouseButton1Click:Connect(function()
-        listHolder.Visible = not listHolder.Visible
-    end)
-    -- hide list when clicking outside
-    UIS.InputBegan:Connect(function(input)
-        if input.UserInputType == Enum.UserInputType.MouseButton1 then
-            if listHolder.Visible and not dropButton:IsAncestorOf(input.Target) and not listHolder:IsAncestorOf(input.Target) then
-                listHolder.Visible = false
-            end
-        end
-    end)
-    return holder, function() return options[selected] end, function(newVal)
-        for i, opt in ipairs(options) do
-            if opt == newVal then
-                selected = i
-                dropButton.Text = opt
-                return
-            end
-        end
-    end
+function Components.Slider(parent, labelText, min, max, default, onChanged)
+  local container = Create("Frame", {Parent=parent, BackgroundTransparency=1, Size=UDim2.new(1,0,0,44)})
+  Create("TextLabel", {Parent=container, BackgroundTransparency=1, Text=labelText, TextXAlignment=Enum.TextXAlignment.Left, TextColor3=Theme.text, TextSize=14, FontFace=Font.new("rbxasset://fonts/families/GothamSSm.json"), Size=UDim2.new(1,0,0,18)})
+  local bar = Create("Frame", {Parent=container, Size=UDim2.new(1,0,0,6), Position=UDim2.new(0,0,0,20), BackgroundColor3=Color3.fromRGB(40,40,40)})
+  round(bar,3); stroke(bar, Theme.stroke,1)
+  local fill = Create("Frame", {Parent=bar, Size=UDim2.new(0,0,1,0), BackgroundColor3=Theme.accent}); round(fill,3)
+  local thumb = Create("Frame", {Parent=container, Size=UDim2.new(0,14,0,14), Position=UDim2.new(0,0,0,17), BackgroundColor3=Theme.accent}); round(thumb,7)
+  local valueLbl = Create("TextLabel", {Parent=container, AnchorPoint=Vector2.new(1,0), Position=UDim2.new(1,0,0,0), Size=UDim2.new(0,60,0,18), BackgroundTransparency=1, Text=tostring(default), TextXAlignment=Enum.TextXAlignment.Right, TextColor3=Theme.textDim, TextSize=13, FontFace=Font.new("rbxasset://fonts/families/GothamSSm.json")})
+  local dragging=false
+  local value = math.clamp(default or min, min, max)
+  local function render()
+    local a = (value-min)/(max-min)
+    fill.Size = UDim2.new(a,0,1,0)
+    thumb.Position = UDim2.new(a,-7,0,17)
+    valueLbl.Text = string.format("%d", math.round(value))
+    if onChanged then onChanged(value) end
+  end
+  local function setFromX(x)
+    local rel = (x - bar.AbsolutePosition.X) / bar.AbsoluteSize.X
+    value = math.clamp(min + rel*(max-min), min, max); render()
+  end
+  container.InputBegan:Connect(function(i) if i.UserInputType==Enum.UserInputType.MouseButton1 then dragging=true; setFromX(i.Position.X) end end)
+  UIS.InputChanged:Connect(function(i) if dragging and (i.UserInputType==Enum.UserInputType.MouseMovement or i.UserInputType==Enum.UserInputType.Touch) then setFromX(i.Position.X) end end)
+  UIS.InputEnded:Connect(function(i) if i.UserInputType==Enum.UserInputType.MouseButton1 then dragging=false end end)
+  render()
 end
 
--- page builder for "Anti Aim"
-local function buildAntiAimPage()
-    local page = Create("Frame", {
-        Name = "Anti Aim",
-        Parent = contentArea,
-        Size = UDim2.new(1, 0, 1, 0),
-        BackgroundTransparency = 1,
-        Visible = false
-    })
-    -- left section title
-    local leftTitle = Create("TextLabel", {
-        Parent = page,
-        Position = UDim2.new(0, 0, 0, 0),
-        Size = UDim2.new(0.5, -8, 0, 20),
-        BackgroundTransparency = 1,
-        Text = "Anti-aimbot angles",
-        TextColor3 = Theme.TextColor,
-        Font = Theme.Font,
-        TextSize = 18,
-        TextXAlignment = Enum.TextXAlignment.Left
-    })
-    -- right section title
-    local rightTitle = Create("TextLabel", {
-        Parent = page,
-        Position = UDim2.new(0.5, 8, 0, 0),
-        Size = UDim2.new(0.5, -8, 0, 20),
-        BackgroundTransparency = 1,
-        Text = "Fake lag",
-        TextColor3 = Theme.TextColor,
-        Font = Theme.Font,
-        TextSize = 18,
-        TextXAlignment = Enum.TextXAlignment.Left
-    })
-    -- left container for controls
-    local leftContainer = Create("Frame", {
-        Parent = page,
-        Position = UDim2.new(0, 0, 0, 24),
-        Size = UDim2.new(0.5, -8, 1, -24),
-        BackgroundTransparency = 1
-    })
-    local leftLayout = Create("UIListLayout", {
-        Parent = leftContainer,
-        SortOrder = Enum.SortOrder.LayoutOrder,
-        Padding = UDim.new(0, 4)
-    })
-    -- controls on left side
-    local toggleEnabled, getToggleEnabled = createToggle(leftContainer, "Enabled", true)
-    local pitchDropdown, getPitch = createDropdown(leftContainer, "Pitch", {"Off", "Random", "Up", "Down"}, 1)
-    local yawDropdown, getYaw = createDropdown(leftContainer, "Yaw", {"Off", "Local view", "Random"}, 2)
-    local yawSlider, getYawJitter = createSlider(leftContainer, "Yaw jitter", 0, 100, 0)
-    local bodyYawDropdown, getBodyYaw = createDropdown(leftContainer, "Body yaw", {"Off", "Freestanding", "Static"}, 1)
-    local bodyYawSlider, getBodyYawOffset = createSlider(leftContainer, "Freestanding body yaw", 0, 100, 50)
-    local edgeYawToggle, getEdgeYaw = createToggle(leftContainer, "Edge yaw", false)
-    local edgeYawDropdown, getEdgeMode = createDropdown(leftContainer, "Freestanding", {"Default", "Jitter", "Random"}, 1)
-
-    -- separate groups visually by adding small frames
-    local function addSeparator(target)
-        local sep = Create("Frame", {
-            Parent = target,
-            Size = UDim2.new(1, 0, 0, 2),
-            BackgroundColor3 = Theme.DarkAccent,
-            BorderSizePixel = 0
-        })
-        return sep
+function Components.Dropdown(parent, labelText, items, defaultIndex, onChanged)
+  local container = Create("Frame", {Parent=parent, BackgroundTransparency=1, Size=UDim2.new(1,0,0,44)})
+  Create("TextLabel", {Parent=container, BackgroundTransparency=1, Text=labelText, TextXAlignment=Enum.TextXAlignment.Left, TextColor3=Theme.text, TextSize=14, FontFace=Font.new("rbxasset://fonts/families/GothamSSm.json"), Size=UDim2.new(1,0,0,18)})
+  local dd = Create("TextButton", {Parent=container, Size=UDim2.new(0,184,0,26), BackgroundColor3=Color3.fromRGB(34,34,34), TextXAlignment=Enum.TextXAlignment.Left, TextColor3=Theme.text, FontFace=Font.new("rbxasset://fonts/families/GothamSSm.json"), TextSize=14, AutoButtonColor=false, BorderSizePixel=0, Text=""})
+  round(dd,8); stroke(dd, Theme.stroke,1); pad(dd,8,0,8,0)
+  local choice = Create("TextLabel", {Parent=dd, BackgroundTransparency=1, Size=UDim2.new(1,-16,1,0), TextXAlignment=Enum.TextXAlignment.Left, TextColor3=Theme.text, FontFace=dd.FontFace, TextSize=14})
+  local arrow = Create("TextLabel", {Parent=dd, BackgroundTransparency=1, AnchorPoint=Vector2.new(1,0), Position=UDim2.new(1,0,0,0), Size=UDim2.new(0,16,1,0), Text="▼", TextColor3=Theme.textDim, FontFace=dd.FontFace, TextSize=12})
+  local listFrame = Create("Frame", {Parent=container, Size=UDim2.new(0,200,0,0), BackgroundColor3=Color3.fromRGB(30,30,30), Visible=false})
+  round(listFrame,8); stroke(listFrame, Theme.stroke,1); pad(listFrame,6,6,6,6); listFrame.ZIndex=5
+  local scroller = Create("ScrollingFrame", {Parent=listFrame, Size=UDim2.new(1,0,1,0), BackgroundTransparency=1, CanvasSize=UDim2.new(0,0,0,#items*28)})
+  local ll = list(scroller,4)
+  local selected = math.clamp(defaultIndex or 1, 1, #items)
+  local function render()
+    choice.Text = items[selected]
+    if onChanged then onChanged(items[selected], selected) end
+  end
+  for i,name in ipairs(items) do
+    local opt = Create("TextButton", {Parent=scroller, Size=UDim2.new(1,-4,0,26), BackgroundColor3=Color3.fromRGB(38,38,38), TextColor3=Theme.text, TextXAlignment=Enum.TextXAlignment.Left, Text="  "..name, AutoButtonColor=true})
+    round(opt,6)
+    opt.MouseButton1Click:Connect(function() selected=i; listFrame.Visible=false; render() end)
+  end
+  local open=false
+  local function setOpen(v)
+    open=v; listFrame.Visible=open; TweenService:Create(listFrame, TweenInfo.new(0.12), {Size=UDim2.new(0,200,0, open and 150 or 0)}):Play()
+  end
+  dd.MouseButton1Click:Connect(function() setOpen(not open) end)
+  UIS.InputBegan:Connect(function(i)
+    if open and i.UserInputType==Enum.UserInputType.MouseButton1 then
+      local pos = UIS:GetMouseLocation(); local a=listFrame.AbsolutePosition; local s=listFrame.AbsoluteSize
+      if not (pos.X>a.X and pos.X<a.X+s.X and pos.Y>a.Y and pos.Y<a.Y+s.Y) then setOpen(false) end
     end
-    -- right container for controls
-    local rightContainer = Create("Frame", {
-        Parent = page,
-        Position = UDim2.new(0.5, 8, 0, 24),
-        Size = UDim2.new(0.5, -8, 1, -24),
-        BackgroundTransparency = 1
-    })
-    local rightLayout = Create("UIListLayout", {
-        Parent = rightContainer,
-        SortOrder = Enum.SortOrder.LayoutOrder,
-        Padding = UDim.new(0, 4)
-    })
-    -- fake lag section
-    local fakeLagToggle, getFakeLag = createToggle(rightContainer, "Enabled", false)
-    local amountSlider, getAmount = createSlider(rightContainer, "Amount", 0, 15, 0)
-    local varianceSlider, getVariance = createSlider(rightContainer, "Variance", 0, 100, 0)
-    local limitSlider, getLimit = createSlider(rightContainer, "Limit", 0, 100, 0)
-    -- separator
-    addSeparator(rightContainer)
-    -- Other section title
-    local otherTitle = Create("TextLabel", {
-        Parent = rightContainer,
-        Size = UDim2.new(1, 0, 0, 18),
-        BackgroundTransparency = 1,
-        Text = "Other",
-        TextColor3 = Theme.TextColor,
-        Font = Theme.Font,
-        TextSize = 16,
-        TextXAlignment = Enum.TextXAlignment.Left
-    })
-    -- Other controls
-    local slowMotionDrop, getSlowType = createDropdown(rightContainer, "Slow motion type", {"Favor high speed", "Favor accuracy", "Mixed"}, 1)
-    local legMoveDrop, getLegMovement = createDropdown(rightContainer, "Leg movement", {"Off", "Static", "Dynamic"}, 1)
-    local onShotToggle, getOnShot = createToggle(rightContainer, "On shot anti-aim", false)
-    local fakePeekToggle, getFakePeek = createToggle(rightContainer, "Fake peek", false)
-
-    return page
+  end)
+  render()
 end
 
--- build pages and store
-pages["Anti Aim"] = buildAntiAimPage()
-
--- default page selection
-if pages["Anti Aim"] then
-    pages["Anti Aim"].Visible = true
-    currentPage = "Anti Aim"
+-- Cards
+local contentList = Create("UIListLayout", {Parent=content, FillDirection=Enum.FillDirection.Horizontal, Padding=UDim.new(0,16)})
+local function card(title)
+  local frame = Create("Frame", {Parent=content, Size=UDim2.new(0.5,-8,1,-16), BackgroundColor3=Theme.panelAlt, BorderSizePixel=0})
+  round(frame,12); stroke(frame, Theme.stroke,1); pad(frame,18,16,18,16)
+  Create("TextLabel", {Parent=frame, Size=UDim2.new(1,0,0,18), BackgroundTransparency=1, Text=title, TextXAlignment=Enum.TextXAlignment.Left, TextColor3=Theme.text, TextSize=15, FontFace=Font.new("rbxasset://fonts/families/GothamSSm.json", Enum.FontWeight.Medium)})
+  return frame
 end
 
--- player info at bottom left
-local bottomInfo = Create("TextLabel", {
-    Parent = navPanel,
-    AnchorPoint = Vector2.new(0, 1),
-    Position = UDim2.new(0, 8, 1, -8),
-    Size = UDim2.new(1, -16, 0, 40),
-    BackgroundTransparency = 1,
-    Text = string.format("%s\n%s", tostring(player.DisplayName), os.date("%d.%m %H:%M", os.time())),
-    TextColor3 = Theme.SubTextColor,
-    Font = Theme.Font,
-    TextSize = 14,
-    TextXAlignment = Enum.TextXAlignment.Left,
-    TextYAlignment = Enum.TextYAlignment.Bottom
-})
+local function buildAntiAim()
+  local left = card("Anti-aimbot angles")
+  local right = card("Fake lag")
+
+  -- Left controls
+  Components.Switch(left, "Enabled", true)
+  Components.Dropdown(left, "Pitch", {"Off","Down","Zero","Up"}, 1)
+  Components.Dropdown(left, "Base yaw", {"Local view","At targets","Opposite"}, 1)
+  Components.Slider(left, "Yaw", -180, 180, 0)
+  Components.Dropdown(left, "Yaw jitter", {"Off","Offset","Center","Random"}, 1)
+  Components.Dropdown(left, "Body yaw", {"Off","Static","Random","Jitter"}, 1)
+  Components.Slider(left, "Freestanding body yaw", 0, 100, 0)
+  Components.Dropdown(left, "Edge yaw", {"Off","Freestanding"}, 2)
+  Components.Dropdown(left, "Freestanding", {"Default","Peek","Tight"}, 1)
+
+  -- Right controls
+  Components.Switch(right, "Enabled", true)
+  Components.Dropdown(right, "Amount", {"Static","Dynamic"}, 2)
+  Components.Slider(right, "Variance", 0, 100, 30)
+  Components.Slider(right, "Limit", 0, 100, 60)
+  Create("TextLabel", {Parent=right, Size=UDim2.new(1,0,0,18), BackgroundTransparency=1, Text="Other", TextXAlignment=Enum.TextXAlignment.Left, TextColor3=Theme.text, TextSize=14, FontFace=Font.new("rbxasset://fonts/families/GothamSSm.json")})
+  Components.Dropdown(right, "Slow motion type", {"Favor high speed","Favor accuracy","Balanced"}, 1)
+  Components.Dropdown(right, "Leg movement", {"Off","Sliding","Walking"}, 1)
+  Components.Switch(right, "On shot anti-aim", false)
+  Components.Switch(right, "Fake peek", false)
+
+  return {left = left, right = right}
+end
+
+-- Page registry (only Anti Aim wired for now)
+pages["Anti Aim"] = Create("Frame", {Parent=content, BackgroundTransparency=1, Size=UDim2.new(1,0,1,0), Visible=true})
+contentList.Parent = pages["Anti Aim"] -- ensure layout applies within page
+local cards = buildAntiAim()
+
+-- Select default nav item visually
+local defaultNav = navScroll:FindFirstChild("nav_Anti Aim")
+if defaultNav and defaultNav:IsA("TextButton") then defaultNav:MouseButton1Click() end
+
+-- Save button feedback
+saveBtn.MouseButton1Click:Connect(function()
+  local orig = saveBtn.Text
+  saveBtn.Text = "Saved ✓"
+  TweenService:Create(saveBtn, TweenInfo.new(0.15), {BackgroundColor3 = Theme.accent:lerp(Color3.new(1,1,1), 0.25)}):Play()
+  task.delay(1.1, function()
+    saveBtn.Text = orig
+    TweenService:Create(saveBtn, TweenInfo.new(0.25), {BackgroundColor3 = Theme.accent}):Play()
+  end)
+end)
