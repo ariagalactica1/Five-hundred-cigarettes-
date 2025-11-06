@@ -1,128 +1,314 @@
---!strict
--- LocalScript inside StarterGui
+-- Gamesense-style Sidebar (Client / LocalScript)
+-- Drop this into StarterPlayerScripts (or StarterGui). It will create ScreenGui under PlayerGui.
 
 local Players = game:GetService("Players")
-local player = Players.LocalPlayer
-local playerGui = player:WaitForChild("PlayerGui")
+local TweenService = game:GetService("TweenService")
+local Lighting = game:GetService("Lighting")
 
--- UI Creation
+local player = Players.LocalPlayer
+
+-- ///// BACKGROUND BLUR (global) /////////////////////////////////////////////
+do
+    local blur = Instance.new("BlurEffect")
+    blur.Size = 12 -- subtle background blur
+    blur.Name = "GamesenseBackgroundBlur"
+    blur.Parent = Lighting
+end
+
+-- ///// SCREEN GUI ////////////////////////////////////////////////////////////
 local screenGui = Instance.new("ScreenGui")
 screenGui.Name = "GamesenseUI"
+screenGui.IgnoreGuiInset = true
 screenGui.ResetOnSpawn = false
-screenGui.Parent = playerGui
+screenGui.Parent = player:WaitForChild("PlayerGui")
 
-local sidebar = Instance.new("Frame")
-sidebar.Name = "Sidebar"
-sidebar.Size = UDim2.new(0, 150, 1, 0)
-sidebar.BackgroundColor3 = Color3.fromRGB(15, 15, 15)
-sidebar.BackgroundTransparency = 0.2
-sidebar.BorderSizePixel = 0
-sidebar.Position = UDim2.new(0, 0, 0, 0)
-sidebar.Parent = screenGui
+-- ///// ROOT CONTAINER ////////////////////////////////////////////////////////
+local root = Instance.new("Frame")
+root.Name = "Root"
+root.AnchorPoint = Vector2.new(0, 0.5)
+root.Position = UDim2.new(0, 24, 0.5, 0)
+root.Size = UDim2.new(0, 320, 0.92, 0) -- tall left sidebar
+root.BackgroundColor3 = Color3.fromRGB(18, 22, 33)
+root.BackgroundTransparency = 0.45 -- glassy
+root.BorderSizePixel = 0
+root.Parent = screenGui
 
-local listLayout = Instance.new("UIListLayout")
-listLayout.SortOrder = Enum.SortOrder.LayoutOrder
-listLayout.Padding = UDim.new(0, 6)
-listLayout.Parent = sidebar
+local corner = Instance.new("UICorner")
+corner.CornerRadius = UDim.new(0, 16)
+corner.Parent = root
 
-local function createHeader(text)
-	local label = Instance.new("TextLabel")
-	label.Text = text
-	label.Font = Enum.Font.SourceSansBold
-	label.TextSize = 14
-	label.TextColor3 = Color3.fromRGB(180, 255, 180)
-	label.BackgroundTransparency = 1
-	label.Size = UDim2.new(1, -10, 0, 20)
-	label.TextXAlignment = Enum.TextXAlignment.Left
-	label.Position = UDim2.new(0, 10, 0, 0)
-	label.Parent = sidebar
+local stroke = Instance.new("UIStroke")
+stroke.Thickness = 1
+stroke.Color = Color3.fromRGB(60, 75, 95)
+stroke.Transparency = 0.3
+stroke.ApplyStrokeMode = Enum.ApplyStrokeMode.Border
+stroke.Parent = root
+
+-- Soft inner glow using an ImageLabel
+local glow = Instance.new("ImageLabel")
+glow.BackgroundTransparency = 1
+glow.Image = "rbxassetid://4994315011" -- soft vignette texture (Roblox default circle blur); safe placeholder
+glow.ScaleType = Enum.ScaleType.Slice
+glow.SliceCenter = Rect.new(256,256,256,256)
+glow.ImageTransparency = 0.75
+glow.Size = UDim2.fromScale(1,1)
+glow.Name = "GlassGlow"
+glow.Parent = root
+
+-- Gradient wash (top-left blue -> bottom-right green)
+local grad = Instance.new("UIGradient")
+grad.Color = ColorSequence.new{
+    ColorSequenceKeypoint.new(0.00, Color3.fromRGB(22, 28, 44)),
+    ColorSequenceKeypoint.new(0.55, Color3.fromRGB(24, 36, 52)),
+    ColorSequenceKeypoint.new(1.00, Color3.fromRGB(23, 41, 31))
+}
+grad.Rotation = 35
+grad.Parent = root
+
+-- Vertical layout
+local layout = Instance.new("UIListLayout")
+layout.Padding = UDim.new(0, 8)
+layout.FillDirection = Enum.FillDirection.Vertical
+layout.HorizontalAlignment = Enum.HorizontalAlignment.Center
+layout.SortOrder = Enum.SortOrder.LayoutOrder
+layout.Parent = root
+
+local function spacer(px)
+    local s = Instance.new("Frame")
+    s.BackgroundTransparency = 1
+    s.Size = UDim2.new(1, -24, 0, px)
+    s.LayoutOrder = 0
+    s.Parent = root
+    return s
 end
 
-local function createButton(icon: string, text: string, selected: boolean?)
-	local button = Instance.new("TextButton")
-	button.Size = UDim2.new(1, -10, 0, 22)
-	button.BackgroundTransparency = 1
-	button.Text = ""
-	button.TextColor3 = Color3.fromRGB(255, 255, 255)
-	button.TextSize = 14
-	button.Font = Enum.Font.SourceSans
-	button.AutoButtonColor = false
-	button.Parent = sidebar
+-- ///// HEADER (big logo) /////////////////////////////////////////////////////
+local header = Instance.new("Frame")
+header.Name = "Header"
+header.BackgroundTransparency = 1
+header.Size = UDim2.new(1, -24, 0, 72)
+header.Parent = root
 
-	local iconLabel = Instance.new("TextLabel")
-	iconLabel.Text = icon
-	iconLabel.Font = Enum.Font.SourceSansBold
-	iconLabel.TextSize = 16
-	iconLabel.TextColor3 = Color3.fromRGB(97, 194, 59)
-	iconLabel.BackgroundTransparency = 1
-	iconLabel.Position = UDim2.new(0, 8, 0, 0)
-	iconLabel.Size = UDim2.new(0, 20, 1, 0)
-	iconLabel.TextXAlignment = Enum.TextXAlignment.Left
-	iconLabel.Parent = button
+local headerLayout = Instance.new("UIListLayout")
+headerLayout.FillDirection = Enum.FillDirection.Vertical
+headerLayout.HorizontalAlignment = Enum.HorizontalAlignment.Left
+headerLayout.VerticalAlignment = Enum.VerticalAlignment.Center
+headerLayout.Padding = UDim.new(0, 2)
+headerLayout.Parent = header
 
-	local textLabel = Instance.new("TextLabel")
-	textLabel.Text = text
-	textLabel.Font = Enum.Font.SourceSans
-	textLabel.TextSize = 14
-	textLabel.TextColor3 = selected and Color3.new(1, 1, 1) or Color3.fromRGB(200, 255, 200)
-	textLabel.BackgroundTransparency = 1
-	textLabel.Position = UDim2.new(0, 32, 0, 0)
-	textLabel.Size = UDim2.new(1, -40, 1, 0)
-	textLabel.TextXAlignment = Enum.TextXAlignment.Left
-	textLabel.Parent = button
+local title = Instance.new("TextLabel")
+title.Name = "Logo"
+title.BackgroundTransparency = 1
+title.Size = UDim2.new(1, 0, 0, 44)
+title.Text = "GAMESENSE"
+title.TextXAlignment = Enum.TextXAlignment.Left
+title.TextYAlignment = Enum.TextYAlignment.Center
+title.TextColor3 = Color3.fromRGB(233, 238, 247)
+title.Font = Enum.Font.GothamBlack -- bold, clean “better” font
+title.TextScaled = true
+title.Parent = header
 
-	return button
+-- Neon green underline “accent”
+local accent = Instance.new("Frame")
+accent.BackgroundColor3 = Color3.fromRGB(126, 241, 126)
+accent.BackgroundTransparency = 0.2
+accent.Size = UDim2.new(0.55, 0, 0, 4)
+accent.Parent = header
+
+local accentCorner = Instance.new("UICorner")
+accentCorner.CornerRadius = UDim.new(1, 0)
+accentCorner.Parent = accent
+
+spacer(4)
+
+-- ///// SECTION HELPERS ///////////////////////////////////////////////////////
+local GREEN = Color3.fromRGB(126, 241, 126)
+local TEXT_HI = Color3.fromRGB(233, 238, 247)
+local TEXT_LO = Color3.fromRGB(166, 176, 194)
+
+local function sectionLabel(text)
+    local lbl = Instance.new("TextLabel")
+    lbl.BackgroundTransparency = 1
+    lbl.Size = UDim2.new(1, -24, 0, 22)
+    lbl.TextXAlignment = Enum.TextXAlignment.Left
+    lbl.Text = text
+    lbl.TextColor3 = TEXT_LO
+    lbl.Font = Enum.Font.GothamMedium
+    lbl.TextSize = 14
+    lbl.Parent = root
+    return lbl
 end
 
-createHeader("GAMESENSE")
+local function makeNavButton(iconText, labelText, selected)
+    local btn = Instance.new("TextButton")
+    btn.AutoButtonColor = false
+    btn.BackgroundColor3 = Color3.fromRGB(26, 33, 48)
+    btn.BackgroundTransparency = selected and 0.1 or 0.3
+    btn.Size = UDim2.new(1, -24, 0, 38)
+    btn.Text = ""
+    btn.Parent = root
 
-createHeader("RageBot")
-createButton("⚔️", "RageBot")
-createButton("🎯", "Anti Aim", true)
+    local btnCorner = Instance.new("UICorner")
+    btnCorner.CornerRadius = UDim.new(0, 12)
+    btnCorner.Parent = btn
 
-createHeader("Legitbot")
-createButton("🔵", "Legitbot")
+    local icon = Instance.new("TextLabel")
+    icon.BackgroundTransparency = 1
+    icon.Size = UDim2.new(0, 34, 1, 0)
+    icon.Position = UDim2.new(0, 10, 0, 0)
+    icon.Text = iconText -- using text icons; swap to ImageLabel if you have assets
+    icon.TextColor3 = GREEN -- “icons like green by changing TextColor3”
+    icon.Font = Enum.Font.GothamBold
+    icon.TextSize = 20
+    icon.TextXAlignment = Enum.TextXAlignment.Center
+    icon.Parent = btn
 
-createHeader("Visuals")
-createButton("👤", "Players")
-createButton("🔫", "Weapon")
-createButton("💣", "Grenades")
-createButton("🧨", "Bomb")
-createButton("🌍", "World")
-createButton("🔭", "View")
+    local text = Instance.new("TextLabel")
+    text.BackgroundTransparency = 1
+    text.Size = UDim2.new(1, -52, 1, 0)
+    text.Position = UDim2.new(0, 46, 0, 0)
+    text.Text = labelText
+    text.TextColor3 = TEXT_HI
+    text.Font = Enum.Font.Gotham
+    text.TextSize = 16
+    text.TextXAlignment = Enum.TextXAlignment.Left
+    text.Parent = btn
 
-createHeader("Miscellaneous")
-createButton("🛠️", "Main")
-createButton("🎒", "Inventory")
-createButton("📄", "Lua")
-createButton("⚙️", "Configs")
+    -- Hover animation (glass brighten + slight lift)
+    local normal = {BackgroundTransparency = selected and 0.10 or 0.30}
+    local hover = {BackgroundTransparency = selected and 0.05 or 0.18}
 
--- User info footer
+    btn.MouseEnter:Connect(function()
+        TweenService:Create(btn, TweenInfo.new(0.15, Enum.EasingStyle.Sine, Enum.EasingDirection.Out), hover):Play()
+    end)
+    btn.MouseLeave:Connect(function()
+        TweenService:Create(btn, TweenInfo.new(0.20, Enum.EasingStyle.Sine, Enum.EasingDirection.Out), normal):Play()
+    end)
+
+    return btn
+end
+
+-- ///// NAVIGATION ////////////////////////////////////////////////////////////
+sectionLabel("Aimbot")
+makeNavButton("⚡", "RageBot", false)
+makeNavButton("⤴", "Anti Aim", true)
+makeNavButton("🎯", "LegitBot", false)
+
+sectionLabel("Visuals")
+makeNavButton("👥", "Players", false)
+makeNavButton("🔫", "Weapon", false)
+makeNavButton("🧪", "Grenades", false)
+makeNavButton("💣", "Bomb", false)
+makeNavButton("🌍", "World", false)
+makeNavButton("👁", "View", false)
+
+sectionLabel("Miscellaneous")
+makeNavButton("🧰", "Main", false)
+makeNavButton("🎒", "Inventory", false)
+makeNavButton("📦", "Lua", false)
+makeNavButton("⚙️", "Configs", false)
+
+spacer(6)
+
+-- ///// FOOTER (avatar + name + time/date) ////////////////////////////////////
+local footer = Instance.new("Frame")
+footer.Name = "Footer"
+footer.BackgroundTransparency = 1
+footer.Size = UDim2.new(1, -24, 0, 68)
+footer.Parent = root
+
+local fLayout = Instance.new("UIListLayout")
+fLayout.FillDirection = Enum.FillDirection.Horizontal
+fLayout.HorizontalAlignment = Enum.HorizontalAlignment.Left
+fLayout.VerticalAlignment = Enum.VerticalAlignment.Center
+fLayout.Padding = UDim.new(0, 10)
+fLayout.Parent = footer
+
+-- User avatar (circular)
 local avatar = Instance.new("ImageLabel")
-avatar.Size = UDim2.new(0, 32, 0, 32)
-avatar.Position = UDim2.new(0, 10, 1, -60)
 avatar.BackgroundTransparency = 1
-avatar.Image = "rbxasset://textures/ui/PlayerList/scroll-bottom.png" -- placeholder
-avatar.Parent = sidebar
+avatar.Size = UDim2.new(0, 48, 0, 48)
+avatar.Image = "rbxassetid://0"
+avatar.Parent = footer
 
-local username = Instance.new("TextLabel")
-username.Text = "Amiga"
-username.Font = Enum.Font.SourceSans
-username.TextSize = 14
-username.TextColor3 = Color3.fromRGB(255, 255, 255)
-username.BackgroundTransparency = 1
-username.Position = UDim2.new(0, 10, 1, -24)
-username.Size = UDim2.new(1, -20, 0, 18)
-username.TextXAlignment = Enum.TextXAlignment.Left
-username.Parent = sidebar
+local avatarCorner = Instance.new("UICorner")
+avatarCorner.CornerRadius = UDim.new(1, 0)
+avatarCorner.Parent = avatar
 
-local timestamp = Instance.new("TextLabel")
-timestamp.Text = "TUE 27.08 24:00"
-timestamp.Font = Enum.Font.SourceSans
-	timestamp.TextSize = 12
-	timestamp.TextColor3 = Color3.fromRGB(97, 194, 59)
-timestamp.BackgroundTransparency = 1
-	timestamp.Position = UDim2.new(0, 10, 1, -10)
-	timestamp.Size = UDim2.new(1, -20, 0, 14)
-timestamp.TextXAlignment = Enum.TextXAlignment.Left
-	timestamp.Parent = sidebar
+local avatarStroke = Instance.new("UIStroke")
+avatarStroke.Thickness = 1
+avatarStroke.Color = Color3.fromRGB(80, 95, 120)
+avatarStroke.Transparency = 0.25
+avatarStroke.Parent = avatar
+
+-- Fetch the user’s thumbnail
+task.spawn(function()
+    local content, _ = Players:GetUserThumbnailAsync(player.UserId, Enum.ThumbnailType.HeadShot, Enum.ThumbnailSize.Size100x100)
+    avatar.Image = content
+end)
+
+-- Name + clock/date stack
+local userBox = Instance.new("Frame")
+userBox.BackgroundTransparency = 1
+userBox.Size = UDim2.new(1, -130, 1, 0)
+userBox.Parent = footer
+
+local userLayout = Instance.new("UIListLayout")
+userLayout.FillDirection = Enum.FillDirection.Vertical
+userLayout.HorizontalAlignment = Enum.HorizontalAlignment.Left
+userLayout.VerticalAlignment = Enum.VerticalAlignment.Center
+userLayout.Padding = UDim.new(0, 2)
+userLayout.Parent = userBox
+
+local nameLbl = Instance.new("TextLabel")
+nameLbl.BackgroundTransparency = 1
+nameLbl.Size = UDim2.new(1, 0, 0, 22)
+nameLbl.TextXAlignment = Enum.TextXAlignment.Left
+nameLbl.Text = player.DisplayName .. " (@" .. player.Name .. ")"
+nameLbl.TextColor3 = TEXT_HI
+nameLbl.Font = Enum.Font.GothamSemibold
+nameLbl.TextSize = 16
+nameLbl.Parent = userBox
+
+local timeLbl = Instance.new("TextLabel")
+timeLbl.BackgroundTransparency = 1
+timeLbl.Size = UDim2.new(1, 0, 0, 20)
+timeLbl.TextXAlignment = Enum.TextXAlignment.Left
+timeLbl.TextColor3 = TEXT_LO
+timeLbl.Font = Enum.Font.Gotham
+timeLbl.TextSize = 14
+timeLbl.Parent = userBox
+
+-- tiny “online” chip on the right
+local chip = Instance.new("TextLabel")
+chip.BackgroundColor3 = Color3.fromRGB(26, 33, 48)
+chip.BackgroundTransparency = 0.3
+chip.Text = " ONLINE "
+chip.TextColor3 = GREEN
+chip.Font = Enum.Font.GothamSemibold
+chip.TextSize = 12
+chip.Size = UDim2.new(0, 70, 0, 24)
+chip.Parent = footer
+
+local chipCorner = Instance.new("UICorner")
+chipCorner.CornerRadius = UDim.new(1, 0)
+chipCorner.Parent = chip
+
+-- ///// CLOCK (local OS time/date) ////////////////////////////////////////////
+local function updateClock()
+    -- DateTime.now() is client-local in LocalScripts; format to match screenshot vibe
+    local nowLocal = DateTime.now():ToLocalTime()
+    -- Example: Tue 27/08 24:00  (24h format)
+    local day = nowLocal:FormatLocalTime("ddd", "en-us")
+    local date = nowLocal:FormatLocalTime("dd/MM", "en-us")
+    local time24 = nowLocal:FormatLocalTime("HH:mm", "en-us")
+    timeLbl.Text = string.format("%s  %s  %s", day, date, time24)
+end
+
+updateClock()
+task.spawn(function()
+    while screenGui.Parent do
+        updateClock()
+        task.wait(1)
+    end
+end)
