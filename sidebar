@@ -1,10 +1,15 @@
--- Place this LocalScript inside StarterGui
-local StarterGui = game:GetService("StarterGui")
+--!strict
+-- LocalScript inside StarterGui
 
+local Players = game:GetService("Players")
+local player = Players.LocalPlayer
+local playerGui = player:WaitForChild("PlayerGui")
+
+-- UI Creation
 local screenGui = Instance.new("ScreenGui")
-screenGui.Name = "GamesenseSidebar"
+screenGui.Name = "GamesenseUI"
 screenGui.ResetOnSpawn = false
-screenGui.Parent = StarterGui
+screenGui.Parent = playerGui
 
 local sidebar = Instance.new("Frame")
 sidebar.Name = "Sidebar"
@@ -12,98 +17,112 @@ sidebar.Size = UDim2.new(0, 150, 1, 0)
 sidebar.BackgroundColor3 = Color3.fromRGB(15, 15, 15)
 sidebar.BackgroundTransparency = 0.2
 sidebar.BorderSizePixel = 0
+sidebar.Position = UDim2.new(0, 0, 0, 0)
 sidebar.Parent = screenGui
 
-local UIListLayout = Instance.new("UIListLayout")
-UIListLayout.Padding = UDim.new(0, 6)
-UIListLayout.SortOrder = Enum.SortOrder.LayoutOrder
-UIListLayout.Parent = sidebar
+local listLayout = Instance.new("UIListLayout")
+listLayout.SortOrder = Enum.SortOrder.LayoutOrder
+listLayout.Padding = UDim.new(0, 6)
+listLayout.Parent = sidebar
 
 local function createHeader(text)
 	local label = Instance.new("TextLabel")
-	label.Size = UDim2.new(1, 0, 0, 20)
-	label.BackgroundTransparency = 1
 	label.Text = text
-	label.TextColor3 = Color3.fromRGB(255, 255, 255)
-	label.TextSize = 14
 	label.Font = Enum.Font.SourceSansBold
+	label.TextSize = 14
+	label.TextColor3 = Color3.fromRGB(180, 255, 180)
+	label.BackgroundTransparency = 1
+	label.Size = UDim2.new(1, -10, 0, 20)
 	label.TextXAlignment = Enum.TextXAlignment.Left
-	label.TextStrokeTransparency = 0.7
+	label.Position = UDim2.new(0, 10, 0, 0)
 	label.Parent = sidebar
-	return label
 end
 
-local function createButton(icon, text, isActive)
-	local btn = Instance.new("TextButton")
-	btn.Size = UDim2.new(1, -10, 0, 24)
-	btn.Position = UDim2.new(0, 5, 0, 0)
-	btn.BackgroundColor3 = isActive and Color3.fromRGB(50, 50, 50) or Color3.fromRGB(15, 15, 15)
-	btn.BackgroundTransparency = isActive and 0.2 or 1
-	btn.BorderSizePixel = 0
-	btn.Text = icon .. "  " .. text
-	btn.TextColor3 = isActive and Color3.fromRGB(255, 255, 255) or Color3.fromRGB(97, 194, 59)
-	btn.TextSize = 14
-	btn.Font = Enum.Font.SourceSans
-	btn.TextXAlignment = Enum.TextXAlignment.Left
-	btn.Parent = sidebar
-	return btn
+local function createButton(icon: string, text: string, selected: boolean?)
+	local button = Instance.new("TextButton")
+	button.Size = UDim2.new(1, -10, 0, 22)
+	button.BackgroundTransparency = 1
+	button.Text = ""
+	button.TextColor3 = Color3.fromRGB(255, 255, 255)
+	button.TextSize = 14
+	button.Font = Enum.Font.SourceSans
+	button.AutoButtonColor = false
+	button.Parent = sidebar
+
+	local iconLabel = Instance.new("TextLabel")
+	iconLabel.Text = icon
+	iconLabel.Font = Enum.Font.SourceSansBold
+	iconLabel.TextSize = 16
+	iconLabel.TextColor3 = Color3.fromRGB(97, 194, 59)
+	iconLabel.BackgroundTransparency = 1
+	iconLabel.Position = UDim2.new(0, 8, 0, 0)
+	iconLabel.Size = UDim2.new(0, 20, 1, 0)
+	iconLabel.TextXAlignment = Enum.TextXAlignment.Left
+	iconLabel.Parent = button
+
+	local textLabel = Instance.new("TextLabel")
+	textLabel.Text = text
+	textLabel.Font = Enum.Font.SourceSans
+	textLabel.TextSize = 14
+	textLabel.TextColor3 = selected and Color3.new(1, 1, 1) or Color3.fromRGB(200, 255, 200)
+	textLabel.BackgroundTransparency = 1
+	textLabel.Position = UDim2.new(0, 32, 0, 0)
+	textLabel.Size = UDim2.new(1, -40, 1, 0)
+	textLabel.TextXAlignment = Enum.TextXAlignment.Left
+	textLabel.Parent = button
+
+	return button
 end
 
--- Header
 createHeader("GAMESENSE")
 
--- RageBot
 createHeader("RageBot")
-createButton("🔫", "RageBot", false)
+createButton("⚔️", "RageBot")
 createButton("🎯", "Anti Aim", true)
 
--- Legitbot
 createHeader("Legitbot")
-createButton("🎯", "Legitbot", false)
+createButton("🔵", "Legitbot")
 
--- Visuals
 createHeader("Visuals")
-createButton("🧍", "Players", false)
-createButton("🔫", "Weapon", false)
-createButton("💣", "Grenades", false)
-createButton("🌍", "World", false)
-createButton("👁️", "View", false)
-createButton("🧨", "Bomb", false)
+createButton("👤", "Players")
+createButton("🔫", "Weapon")
+createButton("💣", "Grenades")
+createButton("🧨", "Bomb")
+createButton("🌍", "World")
+createButton("🔭", "View")
 
--- Miscellaneous
 createHeader("Miscellaneous")
-createButton("🛠️", "Main", false)
-createButton("🎒", "Inventory", false)
-createButton("📜", "Lua", false)
-createButton("⚙️", "Configs", false)
+createButton("🛠️", "Main")
+createButton("🎒", "Inventory")
+createButton("📄", "Lua")
+createButton("⚙️", "Configs")
 
--- User Info
+-- User info footer
 local avatar = Instance.new("ImageLabel")
-avatar.Size = UDim2.new(0, 40, 0, 40)
+avatar.Size = UDim2.new(0, 32, 0, 32)
+avatar.Position = UDim2.new(0, 10, 1, -60)
 avatar.BackgroundTransparency = 1
-avatar.Image = "rbxasset://textures/ui/GuiImagePlaceholder.png"
-avatar.Position = UDim2.new(0.5, -20, 1, -60)
+avatar.Image = "rbxasset://textures/ui/PlayerList/scroll-bottom.png" -- placeholder
 avatar.Parent = sidebar
 
 local username = Instance.new("TextLabel")
-username.Size = UDim2.new(1, 0, 0, 16)
-username.Position = UDim2.new(0, 0, 1, -20)
-username.BackgroundTransparency = 1
 username.Text = "Amiga"
-username.TextColor3 = Color3.fromRGB(255, 255, 255)
-username.TextSize = 14
 username.Font = Enum.Font.SourceSans
-username.TextXAlignment = Enum.TextXAlignment.Center
+username.TextSize = 14
+username.TextColor3 = Color3.fromRGB(255, 255, 255)
+username.BackgroundTransparency = 1
+username.Position = UDim2.new(0, 10, 1, -24)
+username.Size = UDim2.new(1, -20, 0, 18)
+username.TextXAlignment = Enum.TextXAlignment.Left
 username.Parent = sidebar
 
 local timestamp = Instance.new("TextLabel")
-timestamp.Size = UDim2.new(1, 0, 0, 14)
-timestamp.Position = UDim2.new(0, 0, 1, -4)
-timestamp.BackgroundTransparency = 1
 timestamp.Text = "TUE 27.08 24:00"
-timestamp.TextColor3 = Color3.fromRGB(97, 194, 59)
-timestamp.TextSize = 12
 timestamp.Font = Enum.Font.SourceSans
-
-timestamp.TextXAlignment = Enum.TextXAlignment.Center
-timestamp.Parent = sidebar
+	timestamp.TextSize = 12
+	timestamp.TextColor3 = Color3.fromRGB(97, 194, 59)
+timestamp.BackgroundTransparency = 1
+	timestamp.Position = UDim2.new(0, 10, 1, -10)
+	timestamp.Size = UDim2.new(1, -20, 0, 14)
+timestamp.TextXAlignment = Enum.TextXAlignment.Left
+	timestamp.Parent = sidebar
