@@ -1,0 +1,109 @@
+-- Place this LocalScript inside StarterGui
+local StarterGui = game:GetService("StarterGui")
+
+local screenGui = Instance.new("ScreenGui")
+screenGui.Name = "GamesenseSidebar"
+screenGui.ResetOnSpawn = false
+screenGui.Parent = StarterGui
+
+local sidebar = Instance.new("Frame")
+sidebar.Name = "Sidebar"
+sidebar.Size = UDim2.new(0, 150, 1, 0)
+sidebar.BackgroundColor3 = Color3.fromRGB(15, 15, 15)
+sidebar.BackgroundTransparency = 0.2
+sidebar.BorderSizePixel = 0
+sidebar.Parent = screenGui
+
+local UIListLayout = Instance.new("UIListLayout")
+UIListLayout.Padding = UDim.new(0, 6)
+UIListLayout.SortOrder = Enum.SortOrder.LayoutOrder
+UIListLayout.Parent = sidebar
+
+local function createHeader(text)
+	local label = Instance.new("TextLabel")
+	label.Size = UDim2.new(1, 0, 0, 20)
+	label.BackgroundTransparency = 1
+	label.Text = text
+	label.TextColor3 = Color3.fromRGB(255, 255, 255)
+	label.TextSize = 14
+	label.Font = Enum.Font.SourceSansBold
+	label.TextXAlignment = Enum.TextXAlignment.Left
+	label.TextStrokeTransparency = 0.7
+	label.Parent = sidebar
+	return label
+end
+
+local function createButton(icon, text, isActive)
+	local btn = Instance.new("TextButton")
+	btn.Size = UDim2.new(1, -10, 0, 24)
+	btn.Position = UDim2.new(0, 5, 0, 0)
+	btn.BackgroundColor3 = isActive and Color3.fromRGB(50, 50, 50) or Color3.fromRGB(15, 15, 15)
+	btn.BackgroundTransparency = isActive and 0.2 or 1
+	btn.BorderSizePixel = 0
+	btn.Text = icon .. "  " .. text
+	btn.TextColor3 = isActive and Color3.fromRGB(255, 255, 255) or Color3.fromRGB(97, 194, 59)
+	btn.TextSize = 14
+	btn.Font = Enum.Font.SourceSans
+	btn.TextXAlignment = Enum.TextXAlignment.Left
+	btn.Parent = sidebar
+	return btn
+end
+
+-- Header
+createHeader("GAMESENSE")
+
+-- RageBot
+createHeader("RageBot")
+createButton("🔫", "RageBot", false)
+createButton("🎯", "Anti Aim", true)
+
+-- Legitbot
+createHeader("Legitbot")
+createButton("🎯", "Legitbot", false)
+
+-- Visuals
+createHeader("Visuals")
+createButton("🧍", "Players", false)
+createButton("🔫", "Weapon", false)
+createButton("💣", "Grenades", false)
+createButton("🌍", "World", false)
+createButton("👁️", "View", false)
+createButton("🧨", "Bomb", false)
+
+-- Miscellaneous
+createHeader("Miscellaneous")
+createButton("🛠️", "Main", false)
+createButton("🎒", "Inventory", false)
+createButton("📜", "Lua", false)
+createButton("⚙️", "Configs", false)
+
+-- User Info
+local avatar = Instance.new("ImageLabel")
+avatar.Size = UDim2.new(0, 40, 0, 40)
+avatar.BackgroundTransparency = 1
+avatar.Image = "rbxasset://textures/ui/GuiImagePlaceholder.png"
+avatar.Position = UDim2.new(0.5, -20, 1, -60)
+avatar.Parent = sidebar
+
+local username = Instance.new("TextLabel")
+username.Size = UDim2.new(1, 0, 0, 16)
+username.Position = UDim2.new(0, 0, 1, -20)
+username.BackgroundTransparency = 1
+username.Text = "Amiga"
+username.TextColor3 = Color3.fromRGB(255, 255, 255)
+username.TextSize = 14
+username.Font = Enum.Font.SourceSans
+username.TextXAlignment = Enum.TextXAlignment.Center
+username.Parent = sidebar
+
+local timestamp = Instance.new("TextLabel")
+timestamp.Size = UDim2.new(1, 0, 0, 14)
+timestamp.Position = UDim2.new(0, 0, 1, -4)
+timestamp.BackgroundTransparency = 1
+timestamp.Text = "TUE 27.08 24:00"
+timestamp.TextColor3 = Color3.fromRGB(97, 194, 59)
+timestamp.TextSize = 12
+timestamp.Font = Enum.Font.SourceSans
+
+timestamp.TextXAlignment = Enum.TextXAlignment.Center
+timestamp.Parent = sidebar
