@@ -1,90 +1,87 @@
---[[
-  Simple Neverlose UI (based on your guide)
-  Tip: many executors require the RAW GitHub URL for HttpGet.
-       If the first line errors, try the commented RAW version below.
-]]
+-- Simple Neverlose UI - LocalScript/ClientSide
+-- Place this in StarterPlayerScripts (LocalScript) or any client context.
 
--- Loader (from your guide)
-local Neverlose_Main = loadstring(game:HttpGet("https://github.com/Mana42138/Neverlose-UI/blob/main/Source.lua"))()
--- If needed, use RAW instead:
--- local Neverlose_Main = loadstring(game:HttpGet("https://raw.githubusercontent.com/Mana42138/Neverlose-UI/refs/heads/main/Source.lua"))()
+-- 1) Loader (RAW URL only)
+local Neverlose_Main = loadstring(game:HttpGet(
+    "https://raw.githubusercontent.com/Mana42138/Neverlose-UI/refs/heads/main/Source.lua"
+))()
+
+-- Safety check (helps catch “line 8” style errors cleanly)
+if not Neverlose_Main or type(Neverlose_Main.Window) ~= "function" then
+    warn("[Neverlose] Failed to load library. Check RAW URL or network.")
+    return
+end
 
 ---------------------------------------------------------------------
--- Window
+-- 2) Window (client-side)
 ---------------------------------------------------------------------
 local Win = Neverlose_Main:Window({
     Title = "NEVERLOSE",
-    CFG = "Neverlose",
-    Key = Enum.KeyCode.H,
+    CFG   = "Neverlose",
+    Key   = Enum.KeyCode.H,
     External = {
         KeySystem = true,
-        Key = {
-            "Test",
-            "Beta"
-        }
+        Key = { "Test", "Beta" }
     }
 })
 
 ---------------------------------------------------------------------
--- Tab Section & Tab
+-- 3) Tab Section & Tab
 ---------------------------------------------------------------------
 local TabSection1 = Win:TSection("Misc")
-local MainTab = TabSection1:Tab("Main")
+local MainTab     = TabSection1:Tab("Main")
 
 ---------------------------------------------------------------------
--- Sections
+-- 4) Sections
 ---------------------------------------------------------------------
 local MainSection   = MainTab:Section("Main Section")
 local ConfigSection = MainTab:Section("Config")
 
 ---------------------------------------------------------------------
--- Elements: Toggle
+-- 5) Elements: Toggle
 ---------------------------------------------------------------------
 local ValueToggle = false
 local ToggleVar = MainSection:Toggle("Toggle", function(t)
     ValueToggle = t
-    -- print("Toggle state:", ValueToggle)
 end)
-ToggleVar:Set(true) -- true or false to start
+ToggleVar:Set(true)
 
 ---------------------------------------------------------------------
--- Elements: Dropdown
+-- 6) Elements: Dropdown  (use the *ConfigSection* we created)
 ---------------------------------------------------------------------
 local ValueDropdown = nil
-local SmallTable = {"Mana64", "Lmao", "HVH"}
+local SmallTable = { "Mana64", "Lmao", "HVH" }
 
 local SelectConfigVar = ConfigSection:Dropdown("Select Config", SmallTable, function(t)
     ValueDropdown = t
     print("Selected:", ValueDropdown)
 end)
-
-SelectConfigVar:Set("Mana64") -- must exist in the list
--- Refresh later if you need new options:
--- SelectConfigVar:Refresh({"New Mana64", "Legit"})
+SelectConfigVar:Set("Mana64")
+-- To refresh later:
+-- SelectConfigVar:Refresh({ "New Mana64", "Legit" })
 
 ---------------------------------------------------------------------
--- Elements: Slider
+-- 7) Elements: Slider  (on *MainSection*, no undefined 'World')
 ---------------------------------------------------------------------
 local ValueSlider = 50
 local HelloVar = MainSection:Slider("Hello", 1, 500, 50, function(t)
     ValueSlider = t
-    -- print("Slider:", ValueSlider)
 end)
-HelloVar:Set(75) -- any number within [1, 500]
+HelloVar:Set(75)
 
 ---------------------------------------------------------------------
--- Elements: Button
+-- 8) Elements: Button  (on *MainSection*)
 ---------------------------------------------------------------------
 MainSection:Button("Press Me", function()
     Neverlose_Main:Notify({
         Title = "Neverlose",
         Text  = "Yay you pressed me :DD",
-        Time  = 2 -- seconds
+        Time  = 2
     })
 end)
 
 ---------------------------------------------------------------------
--- Elements: TextBox
+-- 9) Elements: TextBox  (on *MainSection*)
 ---------------------------------------------------------------------
 MainSection:TextBox("Password here!", function(t)
     if t == "Mana" then
@@ -94,23 +91,23 @@ MainSection:TextBox("Password here!", function(t)
             Time  = 2
         })
     else
+        -- Client-side kick is fine here since we're in a LocalScript.
         game.Players.LocalPlayer:Kick("Wrong key NOOB")
     end
 end)
 
 ---------------------------------------------------------------------
--- Elements: Colorpicker
+-- 10) Elements: Colorpicker  (on *ConfigSection*)
 ---------------------------------------------------------------------
 ConfigSection:Colorpicker("Background", Color3.fromRGB(0, 20, 38), function(color)
-    -- print("Picked color:", color)
-    -- Example: apply to CoreGui (if your UI supports it), etc.
+    -- Example: apply color somewhere if your lib exposes styling APIs
+    -- print("Picked:", color)
 end)
 
 ---------------------------------------------------------------------
--- Elements: KeyBind
+-- 11) Elements: KeyBind  (on *ConfigSection*)
 ---------------------------------------------------------------------
 ConfigSection:Bind("On-Shot", function(bindData)
-    -- bindData is usually a table or keycode depending on the lib
     print("Bind fired:", tostring(bindData))
 end, {
     { key = Enum.KeyCode.P, Toggled = false },
@@ -118,15 +115,13 @@ end, {
 })
 
 ---------------------------------------------------------------------
--- Lua Scripting Hook (per guide)
+-- 12) Lua Scripting Hook (optional; only if the lib sets getgenv().Lua)
 ---------------------------------------------------------------------
--- Exposes a special "Lua support" section group if the library provides it.
 local NoLove = getgenv().Lua
 if NoLove then
     local LuaMainSection   = NoLove:Section("Main")
     local LuaConfigSection = NoLove:Section("Config")
 
-    -- Example extra controls in Lua-support:
     LuaMainSection:Toggle("Lua: Example Toggle", function(t)
         print("Lua Toggle:", t)
     end)
@@ -135,9 +130,9 @@ if NoLove then
         print("Lua Slider:", v)
     end)
 
-    LuaConfigSection:Dropdown("Lua: Mode", {"A","B","C"}, function(sel)
+    LuaConfigSection:Dropdown("Lua: Mode", { "A", "B", "C" }, function(sel)
         print("Lua Mode:", sel)
     end)
 else
-    warn("Lua support (getgenv().Lua) not detected by the UI library.")
+    warn("[Neverlose] Lua support (getgenv().Lua) not provided by the library.")
 end
