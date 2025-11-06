@@ -1,0 +1,143 @@
+--[[
+  Simple Neverlose UI (based on your guide)
+  Tip: many executors require the RAW GitHub URL for HttpGet.
+       If the first line errors, try the commented RAW version below.
+]]
+
+-- Loader (from your guide)
+local Neverlose_Main = loadstring(game:HttpGet("https://github.com/Mana42138/Neverlose-UI/blob/main/Source.lua"))()
+-- If needed, use RAW instead:
+-- local Neverlose_Main = loadstring(game:HttpGet("https://raw.githubusercontent.com/Mana42138/Neverlose-UI/refs/heads/main/Source.lua"))()
+
+---------------------------------------------------------------------
+-- Window
+---------------------------------------------------------------------
+local Win = Neverlose_Main:Window({
+    Title = "NEVERLOSE",
+    CFG = "Neverlose",
+    Key = Enum.KeyCode.H,
+    External = {
+        KeySystem = true,
+        Key = {
+            "Test",
+            "Beta"
+        }
+    }
+})
+
+---------------------------------------------------------------------
+-- Tab Section & Tab
+---------------------------------------------------------------------
+local TabSection1 = Win:TSection("Misc")
+local MainTab = TabSection1:Tab("Main")
+
+---------------------------------------------------------------------
+-- Sections
+---------------------------------------------------------------------
+local MainSection   = MainTab:Section("Main Section")
+local ConfigSection = MainTab:Section("Config")
+
+---------------------------------------------------------------------
+-- Elements: Toggle
+---------------------------------------------------------------------
+local ValueToggle = false
+local ToggleVar = MainSection:Toggle("Toggle", function(t)
+    ValueToggle = t
+    -- print("Toggle state:", ValueToggle)
+end)
+ToggleVar:Set(true) -- true or false to start
+
+---------------------------------------------------------------------
+-- Elements: Dropdown
+---------------------------------------------------------------------
+local ValueDropdown = nil
+local SmallTable = {"Mana64", "Lmao", "HVH"}
+
+local SelectConfigVar = ConfigSection:Dropdown("Select Config", SmallTable, function(t)
+    ValueDropdown = t
+    print("Selected:", ValueDropdown)
+end)
+
+SelectConfigVar:Set("Mana64") -- must exist in the list
+-- Refresh later if you need new options:
+-- SelectConfigVar:Refresh({"New Mana64", "Legit"})
+
+---------------------------------------------------------------------
+-- Elements: Slider
+---------------------------------------------------------------------
+local ValueSlider = 50
+local HelloVar = MainSection:Slider("Hello", 1, 500, 50, function(t)
+    ValueSlider = t
+    -- print("Slider:", ValueSlider)
+end)
+HelloVar:Set(75) -- any number within [1, 500]
+
+---------------------------------------------------------------------
+-- Elements: Button
+---------------------------------------------------------------------
+MainSection:Button("Press Me", function()
+    Neverlose_Main:Notify({
+        Title = "Neverlose",
+        Text  = "Yay you pressed me :DD",
+        Time  = 2 -- seconds
+    })
+end)
+
+---------------------------------------------------------------------
+-- Elements: TextBox
+---------------------------------------------------------------------
+MainSection:TextBox("Password here!", function(t)
+    if t == "Mana" then
+        Neverlose_Main:Notify({
+            Title = "Welcome",
+            Text  = "Welcome | " .. game.Players.LocalPlayer.Name,
+            Time  = 2
+        })
+    else
+        game.Players.LocalPlayer:Kick("Wrong key NOOB")
+    end
+end)
+
+---------------------------------------------------------------------
+-- Elements: Colorpicker
+---------------------------------------------------------------------
+ConfigSection:Colorpicker("Background", Color3.fromRGB(0, 20, 38), function(color)
+    -- print("Picked color:", color)
+    -- Example: apply to CoreGui (if your UI supports it), etc.
+end)
+
+---------------------------------------------------------------------
+-- Elements: KeyBind
+---------------------------------------------------------------------
+ConfigSection:Bind("On-Shot", function(bindData)
+    -- bindData is usually a table or keycode depending on the lib
+    print("Bind fired:", tostring(bindData))
+end, {
+    { key = Enum.KeyCode.P, Toggled = false },
+    { key = Enum.KeyCode.R, Toggled = true  }
+})
+
+---------------------------------------------------------------------
+-- Lua Scripting Hook (per guide)
+---------------------------------------------------------------------
+-- Exposes a special "Lua support" section group if the library provides it.
+local NoLove = getgenv().Lua
+if NoLove then
+    local LuaMainSection   = NoLove:Section("Main")
+    local LuaConfigSection = NoLove:Section("Config")
+
+    -- Example extra controls in Lua-support:
+    LuaMainSection:Toggle("Lua: Example Toggle", function(t)
+        print("Lua Toggle:", t)
+    end)
+
+    LuaConfigSection:Slider("Lua: Example Slider", 0, 100, 25, function(v)
+        print("Lua Slider:", v)
+    end)
+
+    LuaConfigSection:Dropdown("Lua: Mode", {"A","B","C"}, function(sel)
+        print("Lua Mode:", sel)
+    end)
+else
+    warn("Lua support (getgenv().Lua) not detected by the UI library.")
+end
