@@ -1,5 +1,5 @@
--- Gamesense-style Sidebar (Client / LocalScript)
--- Drop this into StarterPlayerScripts (or StarterGui). It will create ScreenGui under PlayerGui.
+-- Gamesense-style Sidebar (FULL MAIN SCRIPT) - LocalScript
+-- Put this in StarterPlayerScripts or StarterGui. It creates ScreenGui under PlayerGui.
 
 local Players = game:GetService("Players")
 local TweenService = game:GetService("TweenService")
@@ -7,30 +7,33 @@ local Lighting = game:GetService("Lighting")
 
 local player = Players.LocalPlayer
 
--- ///// BACKGROUND BLUR (global) /////////////////////////////////////////////
+-- ===== BACKGROUND BLUR ======================================================
 do
-    local blur = Instance.new("BlurEffect")
-    blur.Size = 12 -- subtle background blur
-    blur.Name = "GamesenseBackgroundBlur"
-    blur.Parent = Lighting
+	local existing = Lighting:FindFirstChild("GamesenseBackgroundBlur")
+	if existing then existing:Destroy() end
+	local blur = Instance.new("BlurEffect")
+	blur.Size = 12
+	blur.Name = "GamesenseBackgroundBlur"
+	blur.Parent = Lighting
 end
 
--- ///// SCREEN GUI ////////////////////////////////////////////////////////////
+-- ===== SCREEN GUI ===========================================================
 local screenGui = Instance.new("ScreenGui")
 screenGui.Name = "GamesenseUI"
-screenGui.IgnoreGuiInset = true
+screenGui.IgnoreGuiInset = false -- respect safe areas so nothing hides under the edges
 screenGui.ResetOnSpawn = false
 screenGui.Parent = player:WaitForChild("PlayerGui")
 
--- ///// ROOT CONTAINER ////////////////////////////////////////////////////////
+-- ===== ROOT SIDEBAR =========================================================
 local root = Instance.new("Frame")
 root.Name = "Root"
 root.AnchorPoint = Vector2.new(0, 0.5)
 root.Position = UDim2.new(0, 24, 0.5, 0)
-root.Size = UDim2.new(0, 320, 0.92, 0) -- tall left sidebar
+root.Size = UDim2.new(0, 320, 0.92, 0) -- a tall left sidebar
 root.BackgroundColor3 = Color3.fromRGB(18, 22, 33)
 root.BackgroundTransparency = 0.45 -- glassy
 root.BorderSizePixel = 0
+root.ClipsDescendants = true
 root.Parent = screenGui
 
 local corner = Instance.new("UICorner")
@@ -44,10 +47,10 @@ stroke.Transparency = 0.3
 stroke.ApplyStrokeMode = Enum.ApplyStrokeMode.Border
 stroke.Parent = root
 
--- Soft inner glow using an ImageLabel
+-- Soft inner glow overlay
 local glow = Instance.new("ImageLabel")
 glow.BackgroundTransparency = 1
-glow.Image = "rbxassetid://4994315011" -- soft vignette texture (Roblox default circle blur); safe placeholder
+glow.Image = "rbxassetid://4994315011" -- soft vignette texture placeholder
 glow.ScaleType = Enum.ScaleType.Slice
 glow.SliceCenter = Rect.new(256,256,256,256)
 glow.ImageTransparency = 0.75
@@ -55,38 +58,31 @@ glow.Size = UDim2.fromScale(1,1)
 glow.Name = "GlassGlow"
 glow.Parent = root
 
--- Gradient wash (top-left blue -> bottom-right green)
+-- Gradient wash
 local grad = Instance.new("UIGradient")
 grad.Color = ColorSequence.new{
-    ColorSequenceKeypoint.new(0.00, Color3.fromRGB(22, 28, 44)),
-    ColorSequenceKeypoint.new(0.55, Color3.fromRGB(24, 36, 52)),
-    ColorSequenceKeypoint.new(1.00, Color3.fromRGB(23, 41, 31))
+	ColorSequenceKeypoint.new(0.00, Color3.fromRGB(22, 28, 44)),
+	ColorSequenceKeypoint.new(0.55, Color3.fromRGB(24, 36, 52)),
+	ColorSequenceKeypoint.new(1.00, Color3.fromRGB(23, 41, 31))
 }
 grad.Rotation = 35
 grad.Parent = root
 
--- Vertical layout
-local layout = Instance.new("UIListLayout")
-layout.Padding = UDim.new(0, 8)
-layout.FillDirection = Enum.FillDirection.Vertical
-layout.HorizontalAlignment = Enum.HorizontalAlignment.Center
-layout.SortOrder = Enum.SortOrder.LayoutOrder
-layout.Parent = root
+-- ===== CONSTANTS ============================================================
+local PADDING = 12
+local HEADER_H = 72
+local FOOTER_H = 68
 
-local function spacer(px)
-    local s = Instance.new("Frame")
-    s.BackgroundTransparency = 1
-    s.Size = UDim2.new(1, -24, 0, px)
-    s.LayoutOrder = 0
-    s.Parent = root
-    return s
-end
+local GREEN   = Color3.fromRGB(126, 241, 126)
+local TEXT_HI = Color3.fromRGB(233, 238, 247)
+local TEXT_LO = Color3.fromRGB(166, 176, 194)
 
--- ///// HEADER (big logo) /////////////////////////////////////////////////////
+-- ===== HEADER (Big Logo) ====================================================
 local header = Instance.new("Frame")
 header.Name = "Header"
 header.BackgroundTransparency = 1
-header.Size = UDim2.new(1, -24, 0, 72)
+header.Position = UDim2.new(0, PADDING, 0, PADDING)
+header.Size = UDim2.new(1, -PADDING*2, 0, HEADER_H)
 header.Parent = root
 
 local headerLayout = Instance.new("UIListLayout")
@@ -103,14 +99,13 @@ title.Size = UDim2.new(1, 0, 0, 44)
 title.Text = "GAMESENSE"
 title.TextXAlignment = Enum.TextXAlignment.Left
 title.TextYAlignment = Enum.TextYAlignment.Center
-title.TextColor3 = Color3.fromRGB(233, 238, 247)
-title.Font = Enum.Font.GothamBlack -- bold, clean “better” font
+title.TextColor3 = TEXT_HI
+title.Font = Enum.Font.GothamBlack -- bold, clean
 title.TextScaled = true
 title.Parent = header
 
--- Neon green underline “accent”
 local accent = Instance.new("Frame")
-accent.BackgroundColor3 = Color3.fromRGB(126, 241, 126)
+accent.BackgroundColor3 = GREEN
 accent.BackgroundTransparency = 0.2
 accent.Size = UDim2.new(0.55, 0, 0, 4)
 accent.Parent = header
@@ -119,102 +114,12 @@ local accentCorner = Instance.new("UICorner")
 accentCorner.CornerRadius = UDim.new(1, 0)
 accentCorner.Parent = accent
 
-spacer(4)
-
--- ///// SECTION HELPERS ///////////////////////////////////////////////////////
-local GREEN = Color3.fromRGB(126, 241, 126)
-local TEXT_HI = Color3.fromRGB(233, 238, 247)
-local TEXT_LO = Color3.fromRGB(166, 176, 194)
-
-local function sectionLabel(text)
-    local lbl = Instance.new("TextLabel")
-    lbl.BackgroundTransparency = 1
-    lbl.Size = UDim2.new(1, -24, 0, 22)
-    lbl.TextXAlignment = Enum.TextXAlignment.Left
-    lbl.Text = text
-    lbl.TextColor3 = TEXT_LO
-    lbl.Font = Enum.Font.GothamMedium
-    lbl.TextSize = 14
-    lbl.Parent = root
-    return lbl
-end
-
-local function makeNavButton(iconText, labelText, selected)
-    local btn = Instance.new("TextButton")
-    btn.AutoButtonColor = false
-    btn.BackgroundColor3 = Color3.fromRGB(26, 33, 48)
-    btn.BackgroundTransparency = selected and 0.1 or 0.3
-    btn.Size = UDim2.new(1, -24, 0, 38)
-    btn.Text = ""
-    btn.Parent = root
-
-    local btnCorner = Instance.new("UICorner")
-    btnCorner.CornerRadius = UDim.new(0, 12)
-    btnCorner.Parent = btn
-
-    local icon = Instance.new("TextLabel")
-    icon.BackgroundTransparency = 1
-    icon.Size = UDim2.new(0, 34, 1, 0)
-    icon.Position = UDim2.new(0, 10, 0, 0)
-    icon.Text = iconText -- using text icons; swap to ImageLabel if you have assets
-    icon.TextColor3 = GREEN -- “icons like green by changing TextColor3”
-    icon.Font = Enum.Font.GothamBold
-    icon.TextSize = 20
-    icon.TextXAlignment = Enum.TextXAlignment.Center
-    icon.Parent = btn
-
-    local text = Instance.new("TextLabel")
-    text.BackgroundTransparency = 1
-    text.Size = UDim2.new(1, -52, 1, 0)
-    text.Position = UDim2.new(0, 46, 0, 0)
-    text.Text = labelText
-    text.TextColor3 = TEXT_HI
-    text.Font = Enum.Font.Gotham
-    text.TextSize = 16
-    text.TextXAlignment = Enum.TextXAlignment.Left
-    text.Parent = btn
-
-    -- Hover animation (glass brighten + slight lift)
-    local normal = {BackgroundTransparency = selected and 0.10 or 0.30}
-    local hover = {BackgroundTransparency = selected and 0.05 or 0.18}
-
-    btn.MouseEnter:Connect(function()
-        TweenService:Create(btn, TweenInfo.new(0.15, Enum.EasingStyle.Sine, Enum.EasingDirection.Out), hover):Play()
-    end)
-    btn.MouseLeave:Connect(function()
-        TweenService:Create(btn, TweenInfo.new(0.20, Enum.EasingStyle.Sine, Enum.EasingDirection.Out), normal):Play()
-    end)
-
-    return btn
-end
-
--- ///// NAVIGATION ////////////////////////////////////////////////////////////
-sectionLabel("Aimbot")
-makeNavButton("⚡", "RageBot", false)
-makeNavButton("⤴", "Anti Aim", true)
-makeNavButton("🎯", "LegitBot", false)
-
-sectionLabel("Visuals")
-makeNavButton("👥", "Players", false)
-makeNavButton("🔫", "Weapon", false)
-makeNavButton("🧪", "Grenades", false)
-makeNavButton("💣", "Bomb", false)
-makeNavButton("🌍", "World", false)
-makeNavButton("👁", "View", false)
-
-sectionLabel("Miscellaneous")
-makeNavButton("🧰", "Main", false)
-makeNavButton("🎒", "Inventory", false)
-makeNavButton("📦", "Lua", false)
-makeNavButton("⚙️", "Configs", false)
-
-spacer(6)
-
--- ///// FOOTER (avatar + name + time/date) ////////////////////////////////////
+-- ===== FOOTER (Avatar + Name + Time/Date) ==================================
 local footer = Instance.new("Frame")
 footer.Name = "Footer"
 footer.BackgroundTransparency = 1
-footer.Size = UDim2.new(1, -24, 0, 68)
+footer.Position = UDim2.new(0, PADDING, 1, -(FOOTER_H + PADDING))
+footer.Size = UDim2.new(1, -PADDING*2, 0, FOOTER_H)
 footer.Parent = root
 
 local fLayout = Instance.new("UIListLayout")
@@ -224,7 +129,6 @@ fLayout.VerticalAlignment = Enum.VerticalAlignment.Center
 fLayout.Padding = UDim.new(0, 10)
 fLayout.Parent = footer
 
--- User avatar (circular)
 local avatar = Instance.new("ImageLabel")
 avatar.BackgroundTransparency = 1
 avatar.Size = UDim2.new(0, 48, 0, 48)
@@ -241,13 +145,15 @@ avatarStroke.Color = Color3.fromRGB(80, 95, 120)
 avatarStroke.Transparency = 0.25
 avatarStroke.Parent = avatar
 
--- Fetch the user’s thumbnail
 task.spawn(function()
-    local content, _ = Players:GetUserThumbnailAsync(player.UserId, Enum.ThumbnailType.HeadShot, Enum.ThumbnailSize.Size100x100)
-    avatar.Image = content
+	local content, _ = Players:GetUserThumbnailAsync(
+		player.UserId,
+		Enum.ThumbnailType.HeadShot,
+		Enum.ThumbnailSize.Size100x100
+	)
+	avatar.Image = content
 end)
 
--- Name + clock/date stack
 local userBox = Instance.new("Frame")
 userBox.BackgroundTransparency = 1
 userBox.Size = UDim2.new(1, -130, 1, 0)
@@ -279,7 +185,6 @@ timeLbl.Font = Enum.Font.Gotham
 timeLbl.TextSize = 14
 timeLbl.Parent = userBox
 
--- tiny “online” chip on the right
 local chip = Instance.new("TextLabel")
 chip.BackgroundColor3 = Color3.fromRGB(26, 33, 48)
 chip.BackgroundTransparency = 0.3
@@ -294,21 +199,129 @@ local chipCorner = Instance.new("UICorner")
 chipCorner.CornerRadius = UDim.new(1, 0)
 chipCorner.Parent = chip
 
--- ///// CLOCK (local OS time/date) ////////////////////////////////////////////
 local function updateClock()
-    -- DateTime.now() is client-local in LocalScripts; format to match screenshot vibe
-    local nowLocal = DateTime.now():ToLocalTime()
-    -- Example: Tue 27/08 24:00  (24h format)
-    local day = nowLocal:FormatLocalTime("ddd", "en-us")
-    local date = nowLocal:FormatLocalTime("dd/MM", "en-us")
-    local time24 = nowLocal:FormatLocalTime("HH:mm", "en-us")
-    timeLbl.Text = string.format("%s  %s  %s", day, date, time24)
+	local nowLocal = DateTime.now():ToLocalTime()
+	local day  = nowLocal:FormatLocalTime("ddd", "en-us")  -- Tue
+	local date = nowLocal:FormatLocalTime("dd/MM", "en-us") -- 27/08
+	local time = nowLocal:FormatLocalTime("HH:mm", "en-us") -- 24h
+	timeLbl.Text = string.format("%s  %s  %s", day, date, time)
 end
 
 updateClock()
 task.spawn(function()
-    while screenGui.Parent do
-        updateClock()
-        task.wait(1)
-    end
+	while screenGui.Parent do
+		updateClock()
+		task.wait(1)
+	end
 end)
+
+-- ===== SCROLLING NAV AREA (between header & footer) ========================
+local scroll = Instance.new("ScrollingFrame")
+scroll.Name = "NavScroll"
+scroll.BackgroundTransparency = 1
+scroll.BorderSizePixel = 0
+scroll.ScrollBarImageTransparency = 0.2
+scroll.ScrollBarThickness = 4
+scroll.AutomaticCanvasSize = Enum.AutomaticSize.Y
+scroll.CanvasSize = UDim2.new(0,0,0,0)
+scroll.Position = UDim2.new(0, PADDING, 0, PADDING + HEADER_H + 8)
+scroll.Size = UDim2.new(1, -PADDING*2, 1, -(HEADER_H + FOOTER_H + PADDING*3))
+scroll.Parent = root
+
+local scrollPadding = Instance.new("UIPadding")
+scrollPadding.PaddingTop = UDim.new(0, 4)
+scrollPadding.PaddingBottom = UDim.new(0, 8)
+scrollPadding.Parent = scroll
+
+local list = Instance.new("UIListLayout")
+list.Padding = UDim.new(0, 8)
+list.FillDirection = Enum.FillDirection.Vertical
+list.HorizontalAlignment = Enum.HorizontalAlignment.Center
+list.SortOrder = Enum.SortOrder.LayoutOrder
+list.Parent = scroll
+
+local function addToScroll(guiObject)
+	guiObject.Parent = scroll
+	return guiObject
+end
+
+-- ===== HELPERS (sections + buttons) ========================================
+local function sectionLabel(text)
+	local lbl = Instance.new("TextLabel")
+	lbl.BackgroundTransparency = 1
+	lbl.Size = UDim2.new(1, 0, 0, 22)
+	lbl.TextXAlignment = Enum.TextXAlignment.Left
+	lbl.Text = text
+	lbl.TextColor3 = TEXT_LO
+	lbl.Font = Enum.Font.GothamMedium
+	lbl.TextSize = 14
+	return addToScroll(lbl)
+end
+
+local function makeNavButton(iconText, labelText, selected)
+	local btn = Instance.new("TextButton")
+	btn.AutoButtonColor = false
+	btn.BackgroundColor3 = Color3.fromRGB(26, 33, 48)
+	btn.BackgroundTransparency = selected and 0.10 or 0.30
+	btn.Size = UDim2.new(1, 0, 0, 38)
+	btn.Text = ""
+
+	local btnCorner = Instance.new("UICorner")
+	btnCorner.CornerRadius = UDim.new(0, 12)
+	btnCorner.Parent = btn
+
+	local icon = Instance.new("TextLabel")
+	icon.BackgroundTransparency = 1
+	icon.Size = UDim2.new(0, 34, 1, 0)
+	icon.Position = UDim2.new(0, 10, 0, 0)
+	icon.Text = iconText -- using text icons; swap to ImageLabel if you have assets
+	icon.TextColor3 = GREEN -- make icons green via TextColor3
+	icon.Font = Enum.Font.GothamBold
+	icon.TextSize = 20
+	icon.TextXAlignment = Enum.TextXAlignment.Center
+	icon.Parent = btn
+
+	local text = Instance.new("TextLabel")
+	text.BackgroundTransparency = 1
+	text.Size = UDim2.new(1, -52, 1, 0)
+	text.Position = UDim2.new(0, 46, 0, 0)
+	text.Text = labelText
+	text.TextColor3 = TEXT_HI
+	text.Font = Enum.Font.Gotham
+	text.TextSize = 16
+	text.TextXAlignment = Enum.TextXAlignment.Left
+	text.Parent = btn
+
+	-- Hover animation
+	local normal = {BackgroundTransparency = selected and 0.10 or 0.30}
+	local hover  = {BackgroundTransparency = selected and 0.05 or 0.18}
+
+	btn.MouseEnter:Connect(function()
+		TweenService:Create(btn, TweenInfo.new(0.15, Enum.EasingStyle.Sine, Enum.EasingDirection.Out), hover):Play()
+	end)
+	btn.MouseLeave:Connect(function()
+		TweenService:Create(btn, TweenInfo.new(0.20, Enum.EasingStyle.Sine, Enum.EasingDirection.Out), normal):Play()
+	end)
+
+	return addToScroll(btn)
+end
+
+-- ===== BUILD NAV CONTENT ====================================================
+sectionLabel("Aimbot")
+makeNavButton("⚡", "RageBot", false)
+makeNavButton("⤴", "Anti Aim", true)
+makeNavButton("🎯", "LegitBot", false)
+
+sectionLabel("Visuals")
+makeNavButton("👥", "Players", false)
+makeNavButton("🔫", "Weapon", false)
+makeNavButton("🧪", "Grenades", false)
+makeNavButton("💣", "Bomb", false)
+makeNavButton("🌍", "World", false)
+makeNavButton("👁", "View", false)
+
+sectionLabel("Miscellaneous")
+makeNavButton("🧰", "Main", false)
+makeNavButton("🎒", "Inventory", false)
+makeNavButton("📦", "Lua", false)
+makeNavButton("⚙️", "Configs", false)
