@@ -5,14 +5,25 @@ local PathfindingService = game:GetService("PathfindingService")
 
 local MAIL_PACKAGE_NAME = "Mail Package"
 local REACH_DISTANCE = 4 -- distance from package pivot to consider "reached"
+local MAX_PATH_DISTANCE = 500 -- don't bother with super-far targets
+
+-- Pathfinding agent settings
+local PATH_PARAMS = {
+    AgentRadius = 2,
+    AgentHeight = 5,
+    AgentCanJump = true,
+    AgentCanClimb = true
+}
 
 local player = Players.LocalPlayer
 local playerGui = player:WaitForChild("PlayerGui")
 
--- 🔁 Always remove previous UI instance if this script runs multiple times
-local existingGui = playerGui:FindFirstChild("MailFetcherUI")
-if existingGui then
-    existingGui:Destroy()
+-- 🔁 Remove existing UI if script injected multiple times
+do
+    local existingGui = playerGui:FindFirstChild("MailFetcherUI")
+    if existingGui then
+        existingGui:Destroy()
+    end
 end
 
 ---------------------------------------------------------------------
@@ -23,7 +34,7 @@ local consoleLabel
 local consoleScroll
 
 local logLines = {}
-local MAX_LINES = 100 -- how many lines to keep in the console
+local MAX_LINES = 100 -- lines kept in console buffer
 
 local function createUI()
     local screenGui = Instance.new("ScreenGui")
@@ -35,18 +46,16 @@ local function createUI()
     local frame = Instance.new("Frame")
     frame.Name = "MainPanel"
     frame.AnchorPoint = Vector2.new(1, 1)
-    frame.Position = UDim2.new(1, -20, 1, -20) -- bottom-right corner
+    frame.Position = UDim2.new(1, -20, 1, -20) -- bottom-right
     frame.Size = UDim2.new(0, 280, 0, 160)
     frame.BackgroundColor3 = Color3.fromRGB(20, 20, 20)
     frame.BackgroundTransparency = 0.1
     frame.Parent = screenGui
 
-    -- Rounded corners
     local corner = Instance.new("UICorner")
     corner.CornerRadius = UDim.new(0, 12)
     corner.Parent = frame
 
-    -- Thin border
     local stroke = Instance.new("UIStroke")
     stroke.Thickness = 1.5
     stroke.Transparency = 0.3
@@ -65,7 +74,7 @@ local function createUI()
     title.TextColor3 = Color3.fromRGB(230, 230, 230)
     title.Parent = frame
 
-    -- Button
+    -- Fetch button
     local fetchButton = Instance.new("TextButton")
     fetchButton.Name = "FetchButton"
     fetchButton.Size = UDim2.new(1, -20, 0, 30)
@@ -119,7 +128,7 @@ local function createUI()
 
     local console = Instance.new("TextLabel")
     console.Name = "Console"
-    console.Size = UDim2.new(1, -4, 0, 0) -- height driven by TextBounds
+    console.Size = UDim2.new(1, -4, 0, 0) -- height via TextBounds
     console.Position = UDim2.new(0, 2, 0, 0)
     console.BackgroundTransparency = 1
     console.Font = Enum.Font.Code
@@ -137,9 +146,13 @@ local function createUI()
     return fetchButton
 end
 
--- logging helper for console (with auto-scroll)
+-- logging helper for console (with auto-scroll, no errors)
 local function log(msg)
-    if not consoleLabel or not consoleScroll then return end
+    if not consoleLabel or not consoleScroll then
+        return
+    end
+
+    msg = tostring(msg)
 
     table.insert(logLines, os.date("[%H:%M:%S] ") .. msg)
     if #logLines > MAX_LINES then
@@ -148,13 +161,15 @@ local function log(msg)
 
     consoleLabel.Text = table.concat(logLines, "\n")
 
-    -- Resize text label + canvas based on content
     local textHeight = consoleLabel.TextBounds.Y
+    if textHeight < 0 then textHeight = 0 end
+
     consoleLabel.Size = UDim2.new(1, -4, 0, textHeight)
     consoleScroll.CanvasSize = UDim2.new(0, 0, 0, textHeight)
 
-    -- Auto-scroll to bottom
     local windowHeight = consoleScroll.AbsoluteWindowSize.Y
+    if windowHeight <= 0 then windowHeight = 1 end
+
     local y = math.max(0, textHeight - windowHeight)
     consoleScroll.CanvasPosition = Vector2.new(0, y)
 end
@@ -165,13 +180,27 @@ end
 
 local function getCharacter()
     local character = player.Character or player.CharacterAdded:Wait()
-    local humanoid = character:WaitForChild("Humanoid")
-    local hrp = character:WaitForChild("HumanoidRootPart")
+    if not character then
+        log("No character found.")
+        return nil
+    end
+
+    local humanoid = character:FindFirstChildOfClass("Humanoid") or character:WaitForChild("Humanoid", 5)
+    local hrp = character:FindFirstChild("HumanoidRootPart") or character:WaitForChild("HumanoidRootPart", 5)
+
+    if not humanoid or not hrp then
+        log("Humanoid or HumanoidRootPart missing.")
+        return nil
+    end
+
     return character, humanoid, hrp
 end
 
--- Find a BasePart we can weld from a model
+-- Find main BasePart from a model
 local function getMainPartFromModel(model)
+    if not model or not model:IsA("Model") then
+        return nil
+    end
     if model.PrimaryPart then
         return model.PrimaryPart
     end
@@ -183,42 +212,79 @@ local function getMainPartFromModel(model)
     return nil
 end
 
--- Get nearest "Mail Package" model in workspace by WorldPivot / GetPivot()
-local function getNearestMailPackage(hrp)
-    local nearestModel = nil
-    local nearestDist = math.huge
+-- Get all "Mail Package" models sorted by distance
+local function getMailPackagesSortedByDistance(hrp)
+    local results = {}
 
     for _, inst in ipairs(workspace:GetDescendants()) do
         if inst:IsA("Model") and inst.Name == MAIL_PACKAGE_NAME then
-            local pivotCFrame = inst:GetPivot()
-            local dist = (pivotCFrame.Position - hrp.Position).Magnitude
-            if dist < nearestDist then
-                nearestDist = dist
-                nearestModel = inst
+            local ok, pivot = pcall(function()
+                return inst:GetPivot()
+            end)
+            if ok and pivot then
+                local dist = (pivot.Position - hrp.Position).Magnitude
+                table.insert(results, {model = inst, distance = dist, pivot = pivot})
             end
         end
     end
 
-    return nearestModel, nearestDist
+    table.sort(results, function(a, b)
+        return a.distance < b.distance
+    end)
+
+    return results
 end
 
--- Make the humanoid walk along a path to a target position (world pivot)
+-- Make the humanoid walk along a path to a target position (robust)
 local function walkToPosition(humanoid, hrp, targetPos)
-    log("Computing path...")
-    local path = PathfindingService:CreatePath()
-    path:ComputeAsync(hrp.Position, targetPos)
-
-    if path.Status ~= Enum.PathStatus.Success then
-        log("Pathfinding failed.")
+    if not humanoid or not hrp or not targetPos then
+        log("walkToPosition: missing humanoid/hrp/targetPos.")
         return false
     end
 
-    log("Path computed. Following waypoints...")
+    local startPos = hrp.Position
+    local flatTarget = Vector3.new(targetPos.X, startPos.Y, targetPos.Z)
+
+    log(("Computing path from (%.1f, %.1f, %.1f) to (%.1f, %.1f, %.1f)..."):format(
+        startPos.X, startPos.Y, startPos.Z,
+        flatTarget.X, flatTarget.Y, flatTarget.Z
+    ))
+
+    local path = PathfindingService:CreatePath(PATH_PARAMS)
+    local okCompute, _ = pcall(function()
+        path:ComputeAsync(startPos, flatTarget)
+    end)
+
+    if not okCompute then
+        log("Path:ComputeAsync threw an error.")
+        return false
+    end
+
+    local status = path.Status
+    log("Path status: " .. tostring(status))
+
+    if status ~= Enum.PathStatus.Success then
+        log("Pathfinding failed (no valid path).")
+        return false
+    end
+
     local waypoints = path:GetWaypoints()
+    if not waypoints or #waypoints == 0 then
+        log("Path has no waypoints.")
+        return false
+    end
+
+    log("Path computed. Following " .. #waypoints .. " waypoints...")
 
     for i, waypoint in ipairs(waypoints) do
+        if not humanoid or humanoid.Health <= 0 then
+            log("Humanoid invalid or dead; stopping path.")
+            return false
+        end
+
         humanoid:MoveTo(waypoint.Position)
         log("Moving to waypoint " .. i .. "/" .. #waypoints)
+
         local reached = humanoid.MoveToFinished:Wait()
         if not reached then
             log("Failed to reach waypoint " .. i .. " (MoveToFinished=false)")
@@ -232,13 +298,17 @@ end
 
 -- Attach/weld the package model to the character when we reach it
 local function pickUpMailPackage(mailPackage, hrp)
+    if not mailPackage or not mailPackage.Parent then
+        log("pickUpMailPackage: package missing or removed.")
+        return
+    end
+
     local mainPart = getMainPartFromModel(mailPackage)
     if not mainPart then
         log("Mail Package has no BasePart to weld.")
         return
     end
 
-    -- make sure parts don't collide and aren't anchored
     for _, desc in ipairs(mailPackage:GetDescendants()) do
         if desc:IsA("BasePart") then
             desc.Anchored = false
@@ -250,13 +320,11 @@ local function pickUpMailPackage(mailPackage, hrp)
         mailPackage.PrimaryPart = mainPart
     end
 
-    -- Weld the main part to the player
     local weld = Instance.new("WeldConstraint")
     weld.Part0 = hrp
     weld.Part1 = mainPart
     weld.Parent = mainPart
 
-    -- Move the package in front of the player
     mailPackage:PivotTo(hrp.CFrame * CFrame.new(0, 0, -2))
 
     log("Picked up Mail Package: " .. mailPackage:GetFullName())
@@ -274,32 +342,62 @@ local function findWalkAndPickup()
     log("Starting fetch operation...")
 
     local character, humanoid, hrp = getCharacter()
-
-    log("Searching for nearest '" .. MAIL_PACKAGE_NAME .. "'...")
-    local mailPackage, dist = getNearestMailPackage(hrp)
-    if not mailPackage then
-        log("No 'Mail Package' found in workspace.")
+    if not character then
+        log("Cannot start fetch: character invalid.")
         isBusy = false
         return
     end
 
-    log(("Nearest Mail Package found at distance: %.1f studs"):format(dist))
-    local pivotCFrame = mailPackage:GetPivot()
-    local targetPos = pivotCFrame.Position
+    log("Searching for '" .. MAIL_PACKAGE_NAME .. "' models...")
+    local candidates = getMailPackagesSortedByDistance(hrp)
 
-    local success = walkToPosition(humanoid, hrp, targetPos)
-    if not success then
-        log("Path following aborted.")
+    if #candidates == 0 then
+        log("No 'Mail Package' models found in workspace.")
         isBusy = false
         return
     end
 
-    local finalDist = (mailPackage:GetPivot().Position - hrp.Position).Magnitude
-    if finalDist <= REACH_DISTANCE then
-        log(("Reached Mail Package (%.1f studs). Picking up..."):format(finalDist))
-        pickUpMailPackage(mailPackage, hrp)
-    else
-        log(("Ended near Mail Package but not close enough (%.1f studs)."):format(finalDist))
+    log("Found " .. #candidates .. " Mail Package(s). Trying nearest reachable...")
+
+    local picked = false
+
+    for index, entry in ipairs(candidates) do
+        local mailPackage = entry.model
+        local dist = entry.distance
+        local pivotCFrame = entry.pivot
+
+        if not mailPackage or not mailPackage.Parent then
+            log("Candidate #" .. index .. " removed, skipping.")
+            continue
+        end
+
+        log(("[#%d] Mail Package at distance: %.1f studs"):format(index, dist))
+
+        if dist > MAX_PATH_DISTANCE then
+            log("Too far (beyond MAX_PATH_DISTANCE), skipping this and remaining.")
+            break
+        end
+
+        local success = walkToPosition(humanoid, hrp, pivotCFrame.Position)
+        if success then
+            local finalDist = (mailPackage:GetPivot().Position - hrp.Position).Magnitude
+            log(("Reached candidate #%d (final distance: %.1f studs)."):format(index, finalDist))
+
+            if finalDist <= REACH_DISTANCE then
+                log("Within reach. Picking up...")
+                pickUpMailPackage(mailPackage, hrp)
+                picked = true
+                break
+            else
+                log("Not close enough after walking, trying next candidate if available.")
+            end
+        else
+            log("Path failed for candidate #" .. index .. ", trying next if available.")
+        end
+    end
+
+    if not picked then
+        log("No reachable Mail Package could be picked up.")
     end
 
     isBusy = false
@@ -314,10 +412,9 @@ log("Mail Fetcher UI initialized.")
 log("Click the button to fetch the nearest Mail Package.")
 
 fetchButton.MouseButton1Click:Connect(function()
-    task.spawn(findWalkAndPickup) -- run in separate thread so UI stays responsive
+    task.spawn(findWalkAndPickup)
 end)
 
--- Optional: log when character respawns (UI persists due to ResetOnSpawn=false)
 player.CharacterAdded:Connect(function()
     task.wait(1)
     log("Character respawned. Ready to fetch Mail Packages.")
