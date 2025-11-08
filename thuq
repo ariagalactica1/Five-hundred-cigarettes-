@@ -7,6 +7,13 @@ local MAIL_PACKAGE_NAME = "Mail Package"
 local REACH_DISTANCE = 4 -- distance from package pivot to consider "reached"
 
 local player = Players.LocalPlayer
+local playerGui = player:WaitForChild("PlayerGui")
+
+-- 🔁 Always remove previous UI instance if this script runs multiple times
+local existingGui = playerGui:FindFirstChild("MailFetcherUI")
+if existingGui then
+    existingGui:Destroy()
+end
 
 ---------------------------------------------------------------------
 -- UI CREATION
@@ -19,8 +26,6 @@ local logLines = {}
 local MAX_LINES = 100 -- how many lines to keep in the console
 
 local function createUI()
-    local playerGui = player:WaitForChild("PlayerGui")
-
     local screenGui = Instance.new("ScreenGui")
     screenGui.Name = "MailFetcherUI"
     screenGui.ResetOnSpawn = false
