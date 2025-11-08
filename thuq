@@ -4,8 +4,7 @@ local Players = game:GetService("Players")
 local PathfindingService = game:GetService("PathfindingService")
 
 local MAIL_PACKAGE_NAME = "Mail Package"
-local REACH_DISTANCE = 4 -- distance from package pivot to consider "reached"
-local MAX_PATH_DISTANCE = 500 -- safety limit if you ever want to clamp distances
+local REACH_DISTANCE = 4 -- distance from target to count as "reached"
 
 -- Always move to this world pivot:
 local TARGET_WORLD_PIVOT = Vector3.new(-159.037, 296.728, 212.685)
@@ -238,7 +237,7 @@ local function getNearestMailPackage(hrp)
     return nearestModel, nearestDist
 end
 
--- Robust path to a target position
+-- Robust path + fallback straight-line walking
 local function walkToPosition(humanoid, hrp, targetPos)
     if not humanoid or not hrp or not targetPos then
         log("walkToPosition: missing humanoid/hrp/targetPos.")
@@ -247,58 +246,88 @@ local function walkToPosition(humanoid, hrp, targetPos)
 
     local startPos = hrp.Position
 
-    -- flatten Y to current character height (helps navmesh)
-    local flatTarget = Vector3.new(targetPos.X, startPos.Y, targetPos.Z)
-
-    log(("Computing path from (%.1f, %.1f, %.1f) to (%.1f, %.1f, %.1f)..."):format(
+    log(("Path step: from (%.1f, %.1f, %.1f) to (%.1f, %.1f, %.1f)"):format(
         startPos.X, startPos.Y, startPos.Z,
-        flatTarget.X, flatTarget.Y, flatTarget.Z
+        targetPos.X, targetPos.Y, targetPos.Z
     ))
 
+    ----------------------------------------------------------------
+    -- 1) Try Roblox pathfinding
+    ----------------------------------------------------------------
     local path = PathfindingService:CreatePath(PATH_PARAMS)
+
     local okCompute = pcall(function()
-        path:ComputeAsync(startPos, flatTarget)
+        path:ComputeAsync(startPos, targetPos)
     end)
 
-    if not okCompute then
-        log("Path:ComputeAsync threw an error.")
-        return false
+    if okCompute then
+        local status = path.Status
+        log("Path status: " .. tostring(status))
+
+        if status == Enum.PathStatus.Success then
+            local waypoints = path:GetWaypoints()
+            if waypoints and #waypoints > 0 then
+                log("Path computed. Following " .. #waypoints .. " waypoints...")
+                for i, waypoint in ipairs(waypoints) do
+                    if not humanoid or humanoid.Health <= 0 then
+                        log("Humanoid invalid or dead; stopping path.")
+                        return false
+                    end
+
+                    humanoid:MoveTo(waypoint.Position)
+                    log("Moving to waypoint " .. i .. "/" .. #waypoints)
+                    local reached = humanoid.MoveToFinished:Wait()
+                    if not reached then
+                        log("Failed to reach waypoint " .. i .. "; stopping path.")
+                        break
+                    end
+                end
+            else
+                log("Path has no waypoints; skipping to fallback.")
+            end
+        else
+            log("Pathfinding could not find a valid path; using fallback.")
+        end
+    else
+        log("Path:ComputeAsync threw an error; using fallback.")
     end
 
-    local status = path.Status
-    log("Path status: " .. tostring(status))
+    ----------------------------------------------------------------
+    -- 2) Fallback: straight-line walking in steps using MoveTo
+    ----------------------------------------------------------------
+    log("Fallback: walking directly towards target in steps.")
 
-    if status ~= Enum.PathStatus.Success then
-        log("Pathfinding failed (no valid path).")
-        return false
-    end
+    local MAX_STEPS = 100
+    local STEP_DISTANCE = 8
 
-    local waypoints = path:GetWaypoints()
-    if not waypoints or #waypoints == 0 then
-        log("Path has no waypoints.")
-        return false
-    end
-
-    log("Path computed. Following " .. #waypoints .. " waypoints...")
-
-    for i, waypoint in ipairs(waypoints) do
+    for step = 1, MAX_STEPS do
         if not humanoid or humanoid.Health <= 0 then
-            log("Humanoid invalid or dead; stopping path.")
+            log("Humanoid invalid or dead; stopping fallback.")
             return false
         end
 
-        humanoid:MoveTo(waypoint.Position)
-        log("Moving to waypoint " .. i .. "/" .. #waypoints)
+        local currentPos = hrp.Position
+        local diff = targetPos - currentPos
+        local distance = diff.Magnitude
 
-        local reached = humanoid.MoveToFinished:Wait()
-        if not reached then
-            log("Failed to reach waypoint " .. i .. " (MoveToFinished=false)")
-            return false
+        if distance <= REACH_DISTANCE then
+            log(("Fallback: reached target (%.1f studs away)."):format(distance))
+            return true
         end
+
+        local direction = diff.Unit
+        local nextPos = currentPos + direction * math.min(STEP_DISTANCE, distance)
+
+        humanoid:MoveTo(nextPos)
+        log(("Fallback: step %d, moving closer (remaining: %.1f studs)"):format(step, distance))
+
+        humanoid.MoveToFinished:Wait()
     end
 
-    log("Arrived near target position.")
-    return true
+    local finalDist = (targetPos - hrp.Position).Magnitude
+    log(("Fallback finished; final distance to target: %.1f studs"):format(finalDist))
+
+    return finalDist <= REACH_DISTANCE
 end
 
 -- Attach/weld the package model to the character
@@ -356,18 +385,16 @@ local function moveToPivotAndPickup()
     local distToPivot = (TARGET_WORLD_PIVOT - hrp.Position).Magnitude
     log(("Distance to target world pivot: %.1f studs"):format(distToPivot))
 
-    if distToPivot > MAX_PATH_DISTANCE then
-        log("Target pivot is very far away (beyond MAX_PATH_DISTANCE), but trying anyway...")
-    end
-
     local success = walkToPosition(humanoid, hrp, TARGET_WORLD_PIVOT)
     if not success then
-        log("Failed to reach target world pivot.")
-        isBusy = false
-        return
+        local finalDist = (TARGET_WORLD_PIVOT - hrp.Position).Magnitude
+        log(("Could not fully reach target world pivot; final distance: %.1f studs"):format(finalDist))
+        -- we still continue; maybe close enough to mail package
+    else
+        log("Reached target world pivot (or close enough).")
     end
 
-    -- After reaching the pivot, look for the nearest Mail Package and pick it up
+    -- After movement, look for nearest Mail Package and pick it up
     local mailPackage, packageDist = getNearestMailPackage(hrp)
     if not mailPackage then
         log("No 'Mail Package' found near pivot.")
@@ -377,11 +404,11 @@ local function moveToPivotAndPickup()
 
     log(("Nearest Mail Package after arrival is %.1f studs away."):format(packageDist))
 
-    if packageDist <= REACH_DISTANCE then
-        log("Within reach. Picking up Mail Package...")
+    if packageDist <= REACH_DISTANCE * 2 then
+        log("Within pickup range. Picking up Mail Package...")
         pickUpMailPackage(mailPackage, hrp)
     else
-        log("Mail Package is not close enough to pick up.")
+        log("Mail Package is still too far to pick up.")
     end
 
     isBusy = false
