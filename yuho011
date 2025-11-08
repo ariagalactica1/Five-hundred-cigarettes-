@@ -1,0 +1,34 @@
+-- LocalScript in StarterPlayerScripts
+
+local Players = game:GetService("Players")
+local UserInputService = game:GetService("UserInputService")
+
+local player = Players.LocalPlayer
+local mouse = player:GetMouse()
+
+local function formatCFrame(cf)
+    -- Optional: formats it as a nice CFrame.new(...) string you can paste into code
+    local x, y, z = cf.X, cf.Y, cf.Z
+    local lookVector = cf.LookVector
+
+    return string.format(
+        "CFrame.new(%.3f, %.3f, %.3f) * CFrame.lookAt(Vector3.new(%.3f, %.3f, %.3f), Vector3.new(%.3f, %.3f, %.3f))",
+        x, y, z,
+        x, y, z,
+        x + lookVector.X, y + lookVector.Y, z + lookVector.Z
+    )
+end
+
+UserInputService.InputBegan:Connect(function(input, gameProcessed)
+    if gameProcessed then return end
+    if input.KeyCode == Enum.KeyCode.C then
+        local target = mouse.Target
+        if target then
+            local cf = target.CFrame
+            print("Raw CFrame:", cf)
+            print("Copy/paste CFrame:", formatCFrame(cf))
+        else
+            print("No Target under mouse to grab CFrame from.")
+        end
+    end
+end)
