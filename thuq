@@ -12,7 +12,11 @@ local player = Players.LocalPlayer
 -- UI CREATION
 ---------------------------------------------------------------------
 
-local consoleLabel  -- will hold reference to the console text label
+local consoleLabel
+local consoleScroll
+
+local logLines = {}
+local MAX_LINES = 100 -- how many lines to keep in the console
 
 local function createUI()
     local playerGui = player:WaitForChild("PlayerGui")
@@ -73,7 +77,6 @@ local function createUI()
     btnCorner.CornerRadius = UDim.new(0, 8)
     btnCorner.Parent = fetchButton
 
-    -- Small shadow / stroke for the button
     local btnStroke = Instance.new("UIStroke")
     btnStroke.Thickness = 1
     btnStroke.Transparency = 0.3
@@ -97,37 +100,58 @@ local function createUI()
     consoleStroke.Transparency = 0.5
     consoleStroke.Parent = consoleFrame
 
-    -- Console text
+    -- Scrolling console
+    local scroll = Instance.new("ScrollingFrame")
+    scroll.Name = "ConsoleScroll"
+    scroll.Size = UDim2.new(1, -10, 1, -10)
+    scroll.Position = UDim2.new(0, 5, 0, 5)
+    scroll.BackgroundTransparency = 1
+    scroll.BorderSizePixel = 0
+    scroll.ScrollBarThickness = 4
+    scroll.CanvasSize = UDim2.new(0, 0, 0, 0)
+    scroll.ScrollBarImageTransparency = 0.2
+    scroll.Parent = consoleFrame
+
     local console = Instance.new("TextLabel")
     console.Name = "Console"
-    console.Size = UDim2.new(1, -10, 1, -10)
-    console.Position = UDim2.new(0, 5, 0, 5)
+    console.Size = UDim2.new(1, -4, 0, 0) -- height driven by TextBounds
+    console.Position = UDim2.new(0, 2, 0, 0)
     console.BackgroundTransparency = 1
     console.Font = Enum.Font.Code
     console.TextSize = 12
     console.TextXAlignment = Enum.TextXAlignment.Left
     console.TextYAlignment = Enum.TextYAlignment.Top
-    console.TextWrapped = true
+    console.TextWrapped = false
     console.Text = ""
     console.TextColor3 = Color3.fromRGB(200, 200, 200)
-    console.Parent = consoleFrame
+    console.Parent = scroll
 
     consoleLabel = console
+    consoleScroll = scroll
 
     return fetchButton
 end
 
--- logging helper for console
-local logLines = {}
-local MAX_LINES = 10
-
+-- logging helper for console (with auto-scroll)
 local function log(msg)
-    if not consoleLabel then return end
+    if not consoleLabel or not consoleScroll then return end
+
     table.insert(logLines, os.date("[%H:%M:%S] ") .. msg)
     if #logLines > MAX_LINES then
         table.remove(logLines, 1)
     end
+
     consoleLabel.Text = table.concat(logLines, "\n")
+
+    -- Resize text label + canvas based on content
+    local textHeight = consoleLabel.TextBounds.Y
+    consoleLabel.Size = UDim2.new(1, -4, 0, textHeight)
+    consoleScroll.CanvasSize = UDim2.new(0, 0, 0, textHeight)
+
+    -- Auto-scroll to bottom
+    local windowHeight = consoleScroll.AbsoluteWindowSize.Y
+    local y = math.max(0, textHeight - windowHeight)
+    consoleScroll.CanvasPosition = Vector2.new(0, y)
 end
 
 ---------------------------------------------------------------------
@@ -285,10 +309,10 @@ log("Mail Fetcher UI initialized.")
 log("Click the button to fetch the nearest Mail Package.")
 
 fetchButton.MouseButton1Click:Connect(function()
-    task.spawn(findWalkAndPickup) -- run in a separate thread so UI doesn't freeze
+    task.spawn(findWalkAndPickup) -- run in separate thread so UI stays responsive
 end)
 
--- Optional: auto-setup when character respawns (UI persists due to ResetOnSpawn=false)
+-- Optional: log when character respawns (UI persists due to ResetOnSpawn=false)
 player.CharacterAdded:Connect(function()
     task.wait(1)
     log("Character respawned. Ready to fetch Mail Packages.")
