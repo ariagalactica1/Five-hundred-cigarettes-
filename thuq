@@ -5,7 +5,10 @@ local PathfindingService = game:GetService("PathfindingService")
 
 local MAIL_PACKAGE_NAME = "Mail Package"
 local REACH_DISTANCE = 4 -- distance from package pivot to consider "reached"
-local MAX_PATH_DISTANCE = 500 -- don't bother with super-far targets
+local MAX_PATH_DISTANCE = 500 -- safety limit if you ever want to clamp distances
+
+-- Always move to this world pivot:
+local TARGET_WORLD_PIVOT = Vector3.new(-159.037, 296.728, 212.685)
 
 -- Pathfinding agent settings
 local PATH_PARAMS = {
@@ -83,7 +86,7 @@ local function createUI()
     fetchButton.AutoButtonColor = true
     fetchButton.Font = Enum.Font.GothamSemibold
     fetchButton.TextSize = 14
-    fetchButton.Text = "Fetch Nearest Mail Package"
+    fetchButton.Text = "Move to Mail Pivot & Pick Up"
     fetchButton.TextColor3 = Color3.fromRGB(255, 255, 255)
     fetchButton.Parent = frame
 
@@ -146,7 +149,7 @@ local function createUI()
     return fetchButton
 end
 
--- logging helper for console (with auto-scroll, no errors)
+-- logging helper for console (with auto-scroll)
 local function log(msg)
     if not consoleLabel or not consoleScroll then
         return
@@ -175,7 +178,7 @@ local function log(msg)
 end
 
 ---------------------------------------------------------------------
--- CORE MAIL PACKAGE / PATHFINDING LOGIC
+-- CORE LOGIC
 ---------------------------------------------------------------------
 
 local function getCharacter()
@@ -212,9 +215,10 @@ local function getMainPartFromModel(model)
     return nil
 end
 
--- Get all "Mail Package" models sorted by distance
-local function getMailPackagesSortedByDistance(hrp)
-    local results = {}
+-- Get *nearest* Mail Package to the player (by pivot distance)
+local function getNearestMailPackage(hrp)
+    local nearestModel
+    local nearestDist = math.huge
 
     for _, inst in ipairs(workspace:GetDescendants()) do
         if inst:IsA("Model") and inst.Name == MAIL_PACKAGE_NAME then
@@ -223,19 +227,18 @@ local function getMailPackagesSortedByDistance(hrp)
             end)
             if ok and pivot then
                 local dist = (pivot.Position - hrp.Position).Magnitude
-                table.insert(results, {model = inst, distance = dist, pivot = pivot})
+                if dist < nearestDist then
+                    nearestDist = dist
+                    nearestModel = inst
+                end
             end
         end
     end
 
-    table.sort(results, function(a, b)
-        return a.distance < b.distance
-    end)
-
-    return results
+    return nearestModel, nearestDist
 end
 
--- Make the humanoid walk along a path to a target position (robust)
+-- Robust path to a target position
 local function walkToPosition(humanoid, hrp, targetPos)
     if not humanoid or not hrp or not targetPos then
         log("walkToPosition: missing humanoid/hrp/targetPos.")
@@ -243,6 +246,8 @@ local function walkToPosition(humanoid, hrp, targetPos)
     end
 
     local startPos = hrp.Position
+
+    -- flatten Y to current character height (helps navmesh)
     local flatTarget = Vector3.new(targetPos.X, startPos.Y, targetPos.Z)
 
     log(("Computing path from (%.1f, %.1f, %.1f) to (%.1f, %.1f, %.1f)..."):format(
@@ -251,7 +256,7 @@ local function walkToPosition(humanoid, hrp, targetPos)
     ))
 
     local path = PathfindingService:CreatePath(PATH_PARAMS)
-    local okCompute, _ = pcall(function()
+    local okCompute = pcall(function()
         path:ComputeAsync(startPos, flatTarget)
     end)
 
@@ -296,7 +301,7 @@ local function walkToPosition(humanoid, hrp, targetPos)
     return true
 end
 
--- Attach/weld the package model to the character when we reach it
+-- Attach/weld the package model to the character
 local function pickUpMailPackage(mailPackage, hrp)
     if not mailPackage or not mailPackage.Parent then
         log("pickUpMailPackage: package missing or removed.")
@@ -332,72 +337,51 @@ end
 
 local isBusy = false
 
-local function findWalkAndPickup()
+local function moveToPivotAndPickup()
     if isBusy then
-        log("Already fetching a Mail Package...")
+        log("Already running a fetch operation...")
         return
     end
 
     isBusy = true
-    log("Starting fetch operation...")
+    log("Starting operation: move to fixed world pivot and pick up mail.")
 
     local character, humanoid, hrp = getCharacter()
     if not character then
-        log("Cannot start fetch: character invalid.")
+        log("Cannot start: character invalid.")
         isBusy = false
         return
     end
 
-    log("Searching for '" .. MAIL_PACKAGE_NAME .. "' models...")
-    local candidates = getMailPackagesSortedByDistance(hrp)
+    local distToPivot = (TARGET_WORLD_PIVOT - hrp.Position).Magnitude
+    log(("Distance to target world pivot: %.1f studs"):format(distToPivot))
 
-    if #candidates == 0 then
-        log("No 'Mail Package' models found in workspace.")
+    if distToPivot > MAX_PATH_DISTANCE then
+        log("Target pivot is very far away (beyond MAX_PATH_DISTANCE), but trying anyway...")
+    end
+
+    local success = walkToPosition(humanoid, hrp, TARGET_WORLD_PIVOT)
+    if not success then
+        log("Failed to reach target world pivot.")
         isBusy = false
         return
     end
 
-    log("Found " .. #candidates .. " Mail Package(s). Trying nearest reachable...")
-
-    local picked = false
-
-    for index, entry in ipairs(candidates) do
-        local mailPackage = entry.model
-        local dist = entry.distance
-        local pivotCFrame = entry.pivot
-
-        if not mailPackage or not mailPackage.Parent then
-            log("Candidate #" .. index .. " removed, skipping.")
-            continue
-        end
-
-        log(("[#%d] Mail Package at distance: %.1f studs"):format(index, dist))
-
-        if dist > MAX_PATH_DISTANCE then
-            log("Too far (beyond MAX_PATH_DISTANCE), skipping this and remaining.")
-            break
-        end
-
-        local success = walkToPosition(humanoid, hrp, pivotCFrame.Position)
-        if success then
-            local finalDist = (mailPackage:GetPivot().Position - hrp.Position).Magnitude
-            log(("Reached candidate #%d (final distance: %.1f studs)."):format(index, finalDist))
-
-            if finalDist <= REACH_DISTANCE then
-                log("Within reach. Picking up...")
-                pickUpMailPackage(mailPackage, hrp)
-                picked = true
-                break
-            else
-                log("Not close enough after walking, trying next candidate if available.")
-            end
-        else
-            log("Path failed for candidate #" .. index .. ", trying next if available.")
-        end
+    -- After reaching the pivot, look for the nearest Mail Package and pick it up
+    local mailPackage, packageDist = getNearestMailPackage(hrp)
+    if not mailPackage then
+        log("No 'Mail Package' found near pivot.")
+        isBusy = false
+        return
     end
 
-    if not picked then
-        log("No reachable Mail Package could be picked up.")
+    log(("Nearest Mail Package after arrival is %.1f studs away."):format(packageDist))
+
+    if packageDist <= REACH_DISTANCE then
+        log("Within reach. Picking up Mail Package...")
+        pickUpMailPackage(mailPackage, hrp)
+    else
+        log("Mail Package is not close enough to pick up.")
     end
 
     isBusy = false
@@ -409,13 +393,16 @@ end
 
 local fetchButton = createUI()
 log("Mail Fetcher UI initialized.")
-log("Click the button to fetch the nearest Mail Package.")
+log(("Target world pivot: (%.3f, %.3f, %.3f)"):format(
+    TARGET_WORLD_PIVOT.X, TARGET_WORLD_PIVOT.Y, TARGET_WORLD_PIVOT.Z
+))
+log("Click the button to move there and pick up the nearest Mail Package.")
 
 fetchButton.MouseButton1Click:Connect(function()
-    task.spawn(findWalkAndPickup)
+    task.spawn(moveToPivotAndPickup)
 end)
 
 player.CharacterAdded:Connect(function()
     task.wait(1)
-    log("Character respawned. Ready to fetch Mail Packages.")
+    log("Character respawned. Ready to move to pivot & fetch mail.")
 end)
