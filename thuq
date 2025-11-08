@@ -1,91 +1,139 @@
 -- LocalScript in StarterPlayerScripts
 
 local Players = game:GetService("Players")
+local PathfindingService = game:GetService("PathfindingService")
+
+local MAIL_PACKAGE_NAME = "Mail Package"
+local REACH_DISTANCE = 4 -- distance from package pivot to consider "reached"
 
 local player = Players.LocalPlayer
-local character = player.Character or player.CharacterAdded:Wait()
-local hrp = character:WaitForChild("HumanoidRootPart")
 
--- CONFIG
-local PACKAGE_NAME = "MailPackage"
-local MAX_PICKUP_DISTANCE = 50 -- studs; set higher/lower as you like
+local function getCharacter()
+    local character = player.Character or player.CharacterAdded:Wait()
+    local humanoid = character:WaitForChild("Humanoid")
+    local hrp = character:WaitForChild("HumanoidRootPart")
+    return character, humanoid, hrp
+end
 
--- Helper: get a "main part" from a MailPackage (Part or Model)
-local function getMainPart(mailPackage)
-    if mailPackage:IsA("BasePart") then
-        return mailPackage
-    elseif mailPackage:IsA("Model") then
-        if mailPackage.PrimaryPart then
-            return mailPackage.PrimaryPart
-        else
-            -- fallback: first BasePart in the model
-            for _, desc in ipairs(mailPackage:GetDescendants()) do
-                if desc:IsA("BasePart") then
-                    return desc
-                end
-            end
+-- Find a BasePart we can weld from a model
+local function getMainPartFromModel(model)
+    if model.PrimaryPart then
+        return model.PrimaryPart
+    end
+    for _, desc in ipairs(model:GetDescendants()) do
+        if desc:IsA("BasePart") then
+            return desc
         end
     end
     return nil
 end
 
--- Find nearest MailPackage in workspace
-local function getNearestMailPackage()
-    local nearest = nil
+-- Get nearest "Mail Package" model in workspace by WorldPivot/ GetPivot()
+local function getNearestMailPackage(hrp)
+    local nearestModel = nil
     local nearestDist = math.huge
 
     for _, inst in ipairs(workspace:GetDescendants()) do
-        if inst.Name == PACKAGE_NAME then
-            local mainPart = getMainPart(inst)
-            if mainPart then
-                local dist = (mainPart.Position - hrp.Position).Magnitude
-                if dist < nearestDist then
-                    nearestDist = dist
-                    nearest = inst
-                end
+        if inst:IsA("Model") and inst.Name == MAIL_PACKAGE_NAME then
+            local pivotCFrame = inst:GetPivot()  -- this is its world pivot
+            local dist = (pivotCFrame.Position - hrp.Position).Magnitude
+            if dist < nearestDist then
+                nearestDist = dist
+                nearestModel = inst
             end
         end
     end
 
-    if nearest and nearestDist <= MAX_PICKUP_DISTANCE then
-        return nearest
-    end
-
-    return nil
+    return nearestModel, nearestDist
 end
 
--- Attach package to the player
-local function pickUpPackage(mailPackage)
-    local mainPart = getMainPart(mailPackage)
-    if not mainPart then return end
+-- Make the humanoid walk along a path to a target position (world pivot)
+local function walkToPosition(humanoid, hrp, targetPos)
+    local path = PathfindingService:CreatePath()
+    path:ComputeAsync(hrp.Position, targetPos)
 
-    -- Make sure it's movable and non-collidable
-    if mainPart:IsA("BasePart") then
-        mainPart.Anchored = false
-        mainPart.CanCollide = false
+    if path.Status ~= Enum.PathStatus.Success then
+        warn("Path failed to compute")
+        return false
     end
 
-    -- If it's a model with no PrimaryPart, set one
-    if mailPackage:IsA("Model") and not mailPackage.PrimaryPart then
+    local waypoints = path:GetWaypoints()
+
+    for i, waypoint in ipairs(waypoints) do
+        humanoid:MoveTo(waypoint.Position)
+        local reached = humanoid.MoveToFinished:Wait()
+        if not reached then
+            -- Could re-path here if you want it more robust
+            warn("MoveTo failed at waypoint", i)
+            return false
+        end
+    end
+
+    return true
+end
+
+-- Attach/weld the package model to the character when we reach it
+local function pickUpMailPackage(mailPackage, hrp)
+    local mainPart = getMainPartFromModel(mailPackage)
+    if not mainPart then
+        warn("Mail Package has no BasePart to weld")
+        return
+    end
+
+    -- make sure parts don't collide and aren't anchored
+    for _, desc in ipairs(mailPackage:GetDescendants()) do
+        if desc:IsA("BasePart") then
+            desc.Anchored = false
+            desc.CanCollide = false
+        end
+    end
+
+    if not mailPackage.PrimaryPart then
         mailPackage.PrimaryPart = mainPart
     end
 
-    -- Weld the main part to the HumanoidRootPart
+    -- Weld the main part to the player
     local weld = Instance.new("WeldConstraint")
     weld.Part0 = hrp
     weld.Part1 = mainPart
-    weld.Parent = mailPackage
+    weld.Parent = mainPart
 
-    -- Position slightly in front of the player
-    mainPart.CFrame = hrp.CFrame * CFrame.new(0, 0, -2)
+    -- Move the package in front of the player
+    mailPackage:PivotTo(hrp.CFrame * CFrame.new(0, 0, -2))
 
-    print("Picked up MailPackage:", mailPackage:GetFullName())
+    print("Picked up Mail Package:", mailPackage:GetFullName())
 end
 
--- MAIN: scan for nearest MailPackage and pick it up
-local package = getNearestMailPackage()
-if package then
-    pickUpPackage(package)
-else
-    warn("No MailPackage found within range.")
+local function findWalkAndPickup()
+    local character, humanoid, hrp = getCharacter()
+
+    local mailPackage, dist = getNearestMailPackage(hrp)
+    if not mailPackage then
+        warn("No 'Mail Package' found in workspace.")
+        return
+    end
+
+    print("Nearest Mail Package at distance:", dist)
+
+    local pivotCFrame = mailPackage:GetPivot()
+    local targetPos = pivotCFrame.Position
+
+    local success = walkToPosition(humanoid, hrp, targetPos)
+    if not success then return end
+
+    -- ensure we're close enough to the pivot before picking up
+    if (mailPackage:GetPivot().Position - hrp.Position).Magnitude <= REACH_DISTANCE then
+        pickUpMailPackage(mailPackage, hrp)
+    else
+        warn("Ended path but not close enough to Mail Package.")
+    end
 end
+
+-- Run once on spawn; you can re-call this however you like (key press, etc.)
+findWalkAndPickup()
+
+-- Optional: automatically do it again on respawn
+player.CharacterAdded:Connect(function()
+    task.wait(1)
+    findWalkAndPickup()
+end)
