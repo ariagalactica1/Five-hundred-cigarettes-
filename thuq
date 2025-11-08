@@ -1,0 +1,91 @@
+-- LocalScript in StarterPlayerScripts
+
+local Players = game:GetService("Players")
+
+local player = Players.LocalPlayer
+local character = player.Character or player.CharacterAdded:Wait()
+local hrp = character:WaitForChild("HumanoidRootPart")
+
+-- CONFIG
+local PACKAGE_NAME = "MailPackage"
+local MAX_PICKUP_DISTANCE = 50 -- studs; set higher/lower as you like
+
+-- Helper: get a "main part" from a MailPackage (Part or Model)
+local function getMainPart(mailPackage)
+    if mailPackage:IsA("BasePart") then
+        return mailPackage
+    elseif mailPackage:IsA("Model") then
+        if mailPackage.PrimaryPart then
+            return mailPackage.PrimaryPart
+        else
+            -- fallback: first BasePart in the model
+            for _, desc in ipairs(mailPackage:GetDescendants()) do
+                if desc:IsA("BasePart") then
+                    return desc
+                end
+            end
+        end
+    end
+    return nil
+end
+
+-- Find nearest MailPackage in workspace
+local function getNearestMailPackage()
+    local nearest = nil
+    local nearestDist = math.huge
+
+    for _, inst in ipairs(workspace:GetDescendants()) do
+        if inst.Name == PACKAGE_NAME then
+            local mainPart = getMainPart(inst)
+            if mainPart then
+                local dist = (mainPart.Position - hrp.Position).Magnitude
+                if dist < nearestDist then
+                    nearestDist = dist
+                    nearest = inst
+                end
+            end
+        end
+    end
+
+    if nearest and nearestDist <= MAX_PICKUP_DISTANCE then
+        return nearest
+    end
+
+    return nil
+end
+
+-- Attach package to the player
+local function pickUpPackage(mailPackage)
+    local mainPart = getMainPart(mailPackage)
+    if not mainPart then return end
+
+    -- Make sure it's movable and non-collidable
+    if mainPart:IsA("BasePart") then
+        mainPart.Anchored = false
+        mainPart.CanCollide = false
+    end
+
+    -- If it's a model with no PrimaryPart, set one
+    if mailPackage:IsA("Model") and not mailPackage.PrimaryPart then
+        mailPackage.PrimaryPart = mainPart
+    end
+
+    -- Weld the main part to the HumanoidRootPart
+    local weld = Instance.new("WeldConstraint")
+    weld.Part0 = hrp
+    weld.Part1 = mainPart
+    weld.Parent = mailPackage
+
+    -- Position slightly in front of the player
+    mainPart.CFrame = hrp.CFrame * CFrame.new(0, 0, -2)
+
+    print("Picked up MailPackage:", mailPackage:GetFullName())
+end
+
+-- MAIN: scan for nearest MailPackage and pick it up
+local package = getNearestMailPackage()
+if package then
+    pickUpPackage(package)
+else
+    warn("No MailPackage found within range.")
+end
