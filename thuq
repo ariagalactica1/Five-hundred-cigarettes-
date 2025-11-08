@@ -8,6 +8,132 @@ local REACH_DISTANCE = 4 -- distance from package pivot to consider "reached"
 
 local player = Players.LocalPlayer
 
+---------------------------------------------------------------------
+-- UI CREATION
+---------------------------------------------------------------------
+
+local consoleLabel  -- will hold reference to the console text label
+
+local function createUI()
+    local playerGui = player:WaitForChild("PlayerGui")
+
+    local screenGui = Instance.new("ScreenGui")
+    screenGui.Name = "MailFetcherUI"
+    screenGui.ResetOnSpawn = false
+    screenGui.Parent = playerGui
+
+    -- Main panel
+    local frame = Instance.new("Frame")
+    frame.Name = "MainPanel"
+    frame.AnchorPoint = Vector2.new(1, 1)
+    frame.Position = UDim2.new(1, -20, 1, -20) -- bottom-right corner
+    frame.Size = UDim2.new(0, 280, 0, 160)
+    frame.BackgroundColor3 = Color3.fromRGB(20, 20, 20)
+    frame.BackgroundTransparency = 0.1
+    frame.Parent = screenGui
+
+    -- Rounded corners
+    local corner = Instance.new("UICorner")
+    corner.CornerRadius = UDim.new(0, 12)
+    corner.Parent = frame
+
+    -- Thin border
+    local stroke = Instance.new("UIStroke")
+    stroke.Thickness = 1.5
+    stroke.Transparency = 0.3
+    stroke.Parent = frame
+
+    -- Title
+    local title = Instance.new("TextLabel")
+    title.Name = "Title"
+    title.Size = UDim2.new(1, -20, 0, 24)
+    title.Position = UDim2.new(0, 10, 0, 8)
+    title.BackgroundTransparency = 1
+    title.Font = Enum.Font.GothamBold
+    title.TextSize = 18
+    title.Text = "Mail Fetcher"
+    title.TextXAlignment = Enum.TextXAlignment.Left
+    title.TextColor3 = Color3.fromRGB(230, 230, 230)
+    title.Parent = frame
+
+    -- Button
+    local fetchButton = Instance.new("TextButton")
+    fetchButton.Name = "FetchButton"
+    fetchButton.Size = UDim2.new(1, -20, 0, 30)
+    fetchButton.Position = UDim2.new(0, 10, 0, 40)
+    fetchButton.BackgroundColor3 = Color3.fromRGB(40, 120, 255)
+    fetchButton.AutoButtonColor = true
+    fetchButton.Font = Enum.Font.GothamSemibold
+    fetchButton.TextSize = 14
+    fetchButton.Text = "Fetch Nearest Mail Package"
+    fetchButton.TextColor3 = Color3.fromRGB(255, 255, 255)
+    fetchButton.Parent = frame
+
+    local btnCorner = Instance.new("UICorner")
+    btnCorner.CornerRadius = UDim.new(0, 8)
+    btnCorner.Parent = fetchButton
+
+    -- Small shadow / stroke for the button
+    local btnStroke = Instance.new("UIStroke")
+    btnStroke.Thickness = 1
+    btnStroke.Transparency = 0.3
+    btnStroke.Parent = fetchButton
+
+    -- Console background
+    local consoleFrame = Instance.new("Frame")
+    consoleFrame.Name = "ConsoleFrame"
+    consoleFrame.Size = UDim2.new(1, -20, 0, 70)
+    consoleFrame.Position = UDim2.new(0, 10, 0, 80)
+    consoleFrame.BackgroundColor3 = Color3.fromRGB(10, 10, 10)
+    consoleFrame.BackgroundTransparency = 0.2
+    consoleFrame.Parent = frame
+
+    local consoleCorner = Instance.new("UICorner")
+    consoleCorner.CornerRadius = UDim.new(0, 8)
+    consoleCorner.Parent = consoleFrame
+
+    local consoleStroke = Instance.new("UIStroke")
+    consoleStroke.Thickness = 1
+    consoleStroke.Transparency = 0.5
+    consoleStroke.Parent = consoleFrame
+
+    -- Console text
+    local console = Instance.new("TextLabel")
+    console.Name = "Console"
+    console.Size = UDim2.new(1, -10, 1, -10)
+    console.Position = UDim2.new(0, 5, 0, 5)
+    console.BackgroundTransparency = 1
+    console.Font = Enum.Font.Code
+    console.TextSize = 12
+    console.TextXAlignment = Enum.TextXAlignment.Left
+    console.TextYAlignment = Enum.TextYAlignment.Top
+    console.TextWrapped = true
+    console.Text = ""
+    console.TextColor3 = Color3.fromRGB(200, 200, 200)
+    console.Parent = consoleFrame
+
+    consoleLabel = console
+
+    return fetchButton
+end
+
+-- logging helper for console
+local logLines = {}
+local MAX_LINES = 10
+
+local function log(msg)
+    if not consoleLabel then return end
+    table.insert(logLines, os.date("[%H:%M:%S] ") .. msg)
+    if #logLines > MAX_LINES then
+        table.remove(logLines, 1)
+    end
+    consoleLabel.Text = table.concat(logLines, "\n")
+end
+
+---------------------------------------------------------------------
+-- CORE MAIL PACKAGE / PATHFINDING LOGIC
+---------------------------------------------------------------------
+
 local function getCharacter()
     local character = player.Character or player.CharacterAdded:Wait()
     local humanoid = character:WaitForChild("Humanoid")
@@ -28,14 +154,14 @@ local function getMainPartFromModel(model)
     return nil
 end
 
--- Get nearest "Mail Package" model in workspace by WorldPivot/ GetPivot()
+-- Get nearest "Mail Package" model in workspace by WorldPivot / GetPivot()
 local function getNearestMailPackage(hrp)
     local nearestModel = nil
     local nearestDist = math.huge
 
     for _, inst in ipairs(workspace:GetDescendants()) do
         if inst:IsA("Model") and inst.Name == MAIL_PACKAGE_NAME then
-            local pivotCFrame = inst:GetPivot()  -- this is its world pivot
+            local pivotCFrame = inst:GetPivot()
             local dist = (pivotCFrame.Position - hrp.Position).Magnitude
             if dist < nearestDist then
                 nearestDist = dist
@@ -49,26 +175,29 @@ end
 
 -- Make the humanoid walk along a path to a target position (world pivot)
 local function walkToPosition(humanoid, hrp, targetPos)
+    log("Computing path...")
     local path = PathfindingService:CreatePath()
     path:ComputeAsync(hrp.Position, targetPos)
 
     if path.Status ~= Enum.PathStatus.Success then
-        warn("Path failed to compute")
+        log("Pathfinding failed.")
         return false
     end
 
+    log("Path computed. Following waypoints...")
     local waypoints = path:GetWaypoints()
 
     for i, waypoint in ipairs(waypoints) do
         humanoid:MoveTo(waypoint.Position)
+        log("Moving to waypoint " .. i .. "/" .. #waypoints)
         local reached = humanoid.MoveToFinished:Wait()
         if not reached then
-            -- Could re-path here if you want it more robust
-            warn("MoveTo failed at waypoint", i)
+            log("Failed to reach waypoint " .. i .. " (MoveToFinished=false)")
             return false
         end
     end
 
+    log("Arrived near target position.")
     return true
 end
 
@@ -76,7 +205,7 @@ end
 local function pickUpMailPackage(mailPackage, hrp)
     local mainPart = getMainPartFromModel(mailPackage)
     if not mainPart then
-        warn("Mail Package has no BasePart to weld")
+        log("Mail Package has no BasePart to weld.")
         return
     end
 
@@ -101,39 +230,66 @@ local function pickUpMailPackage(mailPackage, hrp)
     -- Move the package in front of the player
     mailPackage:PivotTo(hrp.CFrame * CFrame.new(0, 0, -2))
 
-    print("Picked up Mail Package:", mailPackage:GetFullName())
+    log("Picked up Mail Package: " .. mailPackage:GetFullName())
 end
 
-local function findWalkAndPickup()
-    local character, humanoid, hrp = getCharacter()
+local isBusy = false
 
-    local mailPackage, dist = getNearestMailPackage(hrp)
-    if not mailPackage then
-        warn("No 'Mail Package' found in workspace.")
+local function findWalkAndPickup()
+    if isBusy then
+        log("Already fetching a Mail Package...")
         return
     end
 
-    print("Nearest Mail Package at distance:", dist)
+    isBusy = true
+    log("Starting fetch operation...")
 
+    local character, humanoid, hrp = getCharacter()
+
+    log("Searching for nearest '" .. MAIL_PACKAGE_NAME .. "'...")
+    local mailPackage, dist = getNearestMailPackage(hrp)
+    if not mailPackage then
+        log("No 'Mail Package' found in workspace.")
+        isBusy = false
+        return
+    end
+
+    log(("Nearest Mail Package found at distance: %.1f studs"):format(dist))
     local pivotCFrame = mailPackage:GetPivot()
     local targetPos = pivotCFrame.Position
 
     local success = walkToPosition(humanoid, hrp, targetPos)
-    if not success then return end
+    if not success then
+        log("Path following aborted.")
+        isBusy = false
+        return
+    end
 
-    -- ensure we're close enough to the pivot before picking up
-    if (mailPackage:GetPivot().Position - hrp.Position).Magnitude <= REACH_DISTANCE then
+    local finalDist = (mailPackage:GetPivot().Position - hrp.Position).Magnitude
+    if finalDist <= REACH_DISTANCE then
+        log(("Reached Mail Package (%.1f studs). Picking up..."):format(finalDist))
         pickUpMailPackage(mailPackage, hrp)
     else
-        warn("Ended path but not close enough to Mail Package.")
+        log(("Ended near Mail Package but not close enough (%.1f studs)."):format(finalDist))
     end
+
+    isBusy = false
 end
 
--- Run once on spawn; you can re-call this however you like (key press, etc.)
-findWalkAndPickup()
+---------------------------------------------------------------------
+-- BOOTSTRAP
+---------------------------------------------------------------------
 
--- Optional: automatically do it again on respawn
+local fetchButton = createUI()
+log("Mail Fetcher UI initialized.")
+log("Click the button to fetch the nearest Mail Package.")
+
+fetchButton.MouseButton1Click:Connect(function()
+    task.spawn(findWalkAndPickup) -- run in a separate thread so UI doesn't freeze
+end)
+
+-- Optional: auto-setup when character respawns (UI persists due to ResetOnSpawn=false)
 player.CharacterAdded:Connect(function()
     task.wait(1)
-    findWalkAndPickup()
+    log("Character respawned. Ready to fetch Mail Packages.")
 end)
