@@ -1,49 +1,45 @@
---// Local / client-sided attribute scanner for LocalPlayer
+-- Local / client-sided attribute scanner for LocalPlayer
+-- Prints ONLY attributes (one per line) and skips Script-y instances
 
 local Players = game:GetService("Players")
 local localPlayer = Players.LocalPlayer
 
--- Pretty-print attributes for a single Instance
 local function printAttributesForInstance(inst)
     local attrs = inst:GetAttributes()
     if not attrs or not next(attrs) then
         return
     end
 
-    print("=== Instance:", inst:GetFullName(), "===")
+    -- Skip anything script-like (Script, LocalScript, ModuleScript, PlayerScripts, etc.)
+    local className = inst.ClassName
+    if className:find("Script") then
+        return
+    end
+
+    local fullPath = inst:GetFullName()
 
     for attributeName, attributeValue in pairs(attrs) do
         local valueType = typeof(attributeValue)
-        local valueStr
+        local valueStr = tostring(attributeValue)
 
-        if valueType == "Vector3"
-            or valueType == "Vector2"
-            or valueType == "CFrame"
-            or valueType == "Color3" then
-            valueStr = tostring(attributeValue)
-        elseif valueType == "table" then
-            valueStr = "<table>"
-        else
-            valueStr = tostring(attributeValue)
-        end
-
-        print(string.format("  %s (%s) = %s", attributeName, valueType, valueStr))
+        -- One clean line per attribute:
+        -- path.AttributeName (Type) = Value
+        print(string.format("%s.%s (%s) = %s", fullPath, attributeName, valueType, valueStr))
     end
 end
 
--- Scan LocalPlayer and all descendants
 local function scanLocalPlayerAttributes()
     if not localPlayer then
         warn("LocalPlayer not found.")
         return
     end
 
-    print("=== Scanning attributes for LocalPlayer and all descendants ===")
+    print("=== Attribute scan for LocalPlayer and descendants (no scripts) ===")
 
-    -- LocalPlayer itself
+    -- Attributes directly on the Player object
     printAttributesForInstance(localPlayer)
 
-    -- Everything under LocalPlayer (Character, PlayerGui, etc.)
+    -- Attributes on descendants (Character, Backpack, PlayerGui, etc.)
     for _, inst in ipairs(localPlayer:GetDescendants()) do
         printAttributesForInstance(inst)
     end
