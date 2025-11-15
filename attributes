@@ -1,50 +1,184 @@
--- Local / client-sided attribute scanner for LocalPlayer
--- Prints ONLY attributes (one per line) and skips Script-y instances
+-- Roblox Client-Side Attribute Scanner
+-- Place this in a LocalScript in StarterPlayer > StarterPlayerScripts
 
 local Players = game:GetService("Players")
-local localPlayer = Players.LocalPlayer
+local player = Players.LocalPlayer
 
-local function printAttributesForInstance(inst)
-    local attrs = inst:GetAttributes()
-    if not attrs or not next(attrs) then
-        return
-    end
+-- Configuration
+local CONFIG = {
+	UPDATE_INTERVAL = 1, -- How often to scan (in seconds)
+	SCAN_WORKSPACE = true,
+	SCAN_REPLICATED_STORAGE = true,
+	SCAN_PLAYER = true,
+	SHOW_EMPTY = false, -- Show instances with no attributes
+	MAX_RESULTS = 100 -- Limit results to prevent lag
+}
 
-    -- Skip anything script-like (Script, LocalScript, ModuleScript, PlayerScripts, etc.)
-    local className = inst.ClassName
-    if className:find("Script") then
-        return
-    end
+-- Storage for tracked attributes
+local trackedInstances = {}
+local resultCount = 0
 
-    local fullPath = inst:GetFullName()
-
-    for attributeName, attributeValue in pairs(attrs) do
-        local valueType = typeof(attributeValue)
-        local valueStr = tostring(attributeValue)
-
-        -- One clean line per attribute:
-        -- path.AttributeName (Type) = Value
-        print(string.format("%s.%s (%s) = %s", fullPath, attributeName, valueType, valueStr))
-    end
+-- Helper function to get full path of an instance
+local function getFullPath(instance)
+	local path = instance.Name
+	local parent = instance.Parent
+	
+	while parent and parent ~= game do
+		path = parent.Name .. "." .. path
+		parent = parent.Parent
+	end
+	
+	return path
 end
 
-local function scanLocalPlayerAttributes()
-    if not localPlayer then
-        warn("LocalPlayer not found.")
-        return
-    end
-
-    print("=== Attribute scan for LocalPlayer and descendants (no scripts) ===")
-
-    -- Attributes directly on the Player object
-    printAttributesForInstance(localPlayer)
-
-    -- Attributes on descendants (Character, Backpack, PlayerGui, etc.)
-    for _, inst in ipairs(localPlayer:GetDescendants()) do
-        printAttributesForInstance(inst)
-    end
-
-    print("=== Scan complete ===")
+-- Function to scan an instance for attributes
+local function scanInstance(instance)
+	if resultCount >= CONFIG.MAX_RESULTS then
+		return
+	end
+	
+	local attributes = instance:GetAttributes()
+	local hasAttributes = next(attributes) ~= nil
+	
+	if hasAttributes or CONFIG.SHOW_EMPTY then
+		local path = getFullPath(instance)
+		
+		if not trackedInstances[instance] then
+			trackedInstances[instance] = true
+			resultCount += 1
+			
+			print("━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
+			print("📍 Instance:", instance.Name)
+			print("📂 Path:", path)
+			print("🏷️  Class:", instance.ClassName)
+			
+			if hasAttributes then
+				print("✨ Attributes:")
+				for name, value in pairs(attributes) do
+					local valueType = typeof(value)
+					print(string.format("   • %s = %s (%s)", name, tostring(value), valueType))
+				end
+			else
+				print("✨ Attributes: None")
+			end
+		end
+	end
 end
 
-scanLocalPlayerAttributes()
+-- Recursive function to scan descendants
+local function scanDescendants(container, label)
+	print("\n🔍 Scanning:", label)
+	print("━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
+	
+	scanInstance(container)
+	
+	for _, descendant in ipairs(container:GetDescendants()) do
+		if resultCount >= CONFIG.MAX_RESULTS then
+			print("⚠️  Result limit reached!")
+			break
+		end
+		scanInstance(descendant)
+	end
+end
+
+-- Function to watch for attribute changes
+local function watchAttributes(instance)
+	instance.AttributeChanged:Connect(function(attributeName)
+		local value = instance:GetAttribute(attributeName)
+		local path = getFullPath(instance)
+		
+		print("\n🔔 ATTRIBUTE CHANGED!")
+		print("━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
+		print("📍 Instance:", instance.Name)
+		print("📂 Path:", path)
+		print("🏷️  Attribute:", attributeName)
+		print("💾 New Value:", tostring(value), "(" .. typeof(value) .. ")")
+	end)
+end
+
+-- Main scanning function
+local function performScan()
+	print("\n\n")
+	print("╔════════════════════════════════════╗")
+	print("║   ROBLOX ATTRIBUTE SCANNER v1.0    ║")
+	print("╚════════════════════════════════════╝")
+	print("⏰ Scan Time:", os.date("%X"))
+	
+	-- Reset tracking
+	trackedInstances = {}
+	resultCount = 0
+	
+	-- Scan different containers
+	if CONFIG.SCAN_WORKSPACE then
+		scanDescendants(workspace, "Workspace")
+	end
+	
+	if CONFIG.SCAN_REPLICATED_STORAGE then
+		local ReplicatedStorage = game:GetService("ReplicatedStorage")
+		scanDescendants(ReplicatedStorage, "ReplicatedStorage")
+	end
+	
+	if CONFIG.SCAN_PLAYER and player.Character then
+		scanDescendants(player.Character, "Player Character")
+	end
+	
+	print("\n")
+	print("╔════════════════════════════════════╗")
+	print("║         SCAN COMPLETE              ║")
+	print("╚════════════════════════════════════╝")
+	print("📊 Total instances with attributes:", resultCount)
+	print("⏰ Next scan in", CONFIG.UPDATE_INTERVAL, "seconds")
+end
+
+-- Watch for new instances being added
+local function setupWatchers(container)
+	container.DescendantAdded:Connect(function(descendant)
+		watchAttributes(descendant)
+	end)
+	
+	-- Watch existing descendants
+	for _, descendant in ipairs(container:GetDescendants()) do
+		watchAttributes(descendant)
+	end
+	
+	-- Watch the container itself
+	watchAttributes(container)
+end
+
+-- Initialize
+print("🚀 Attribute Scanner Initialized!")
+print("⚙️  Configuration:")
+print("   • Update Interval:", CONFIG.UPDATE_INTERVAL, "seconds")
+print("   • Scan Workspace:", CONFIG.SCAN_WORKSPACE)
+print("   • Scan ReplicatedStorage:", CONFIG.SCAN_REPLICATED_STORAGE)
+print("   • Scan Player:", CONFIG.SCAN_PLAYER)
+print("   • Show Empty:", CONFIG.SHOW_EMPTY)
+
+-- Setup attribute change watchers
+if CONFIG.SCAN_WORKSPACE then
+	setupWatchers(workspace)
+end
+
+if CONFIG.SCAN_REPLICATED_STORAGE then
+	setupWatchers(game:GetService("ReplicatedStorage"))
+end
+
+-- Watch player character
+player.CharacterAdded:Connect(function(character)
+	if CONFIG.SCAN_PLAYER then
+		setupWatchers(character)
+	end
+end)
+
+if player.Character and CONFIG.SCAN_PLAYER then
+	setupWatchers(player.Character)
+end
+
+-- Perform initial scan
+performScan()
+
+-- Setup periodic scanning
+while true do
+	task.wait(CONFIG.UPDATE_INTERVAL)
+	performScan()
+end
