@@ -1,184 +1,176 @@
--- Roblox Client-Side Attribute Scanner
+-- Roblox LocalPlayer Attribute Scanner - All Common Locations
+-- Scans: Character Attributes, Player Attributes, Data folder, and Leaderstats
 -- Place this in a LocalScript in StarterPlayer > StarterPlayerScripts
 
 local Players = game:GetService("Players")
 local player = Players.LocalPlayer
 
--- Configuration
-local CONFIG = {
-	UPDATE_INTERVAL = 1, -- How often to scan (in seconds)
-	SCAN_WORKSPACE = true,
-	SCAN_REPLICATED_STORAGE = true,
-	SCAN_PLAYER = true,
-	SHOW_EMPTY = false, -- Show instances with no attributes
-	MAX_RESULTS = 100 -- Limit results to prevent lag
-}
+print("\n╔════════════════════════════════════════════════╗")
+print("║  LOCALPLAYER ATTRIBUTE SCANNER - ALL LOCATIONS ║")
+print("╚════════════════════════════════════════════════╝")
+print("👤 Player:", player.Name)
+print("🆔 UserId:", player.UserId)
+print("\n")
 
--- Storage for tracked attributes
-local trackedInstances = {}
-local resultCount = 0
+local totalFound = 0
 
--- Helper function to get full path of an instance
-local function getFullPath(instance)
-	local path = instance.Name
-	local parent = instance.Parent
-	
-	while parent and parent ~= game do
-		path = parent.Name .. "." .. path
-		parent = parent.Parent
-	end
-	
-	return path
+-- Helper function to safely get a value
+local function safeGet(instance, key)
+	if not instance then return nil end
+	local success, result = pcall(function()
+		return instance:GetAttribute(key) or (instance:FindFirstChild(key) and instance[key].Value)
+	end)
+	return success and result or nil
 end
 
--- Function to scan an instance for attributes
-local function scanInstance(instance)
-	if resultCount >= CONFIG.MAX_RESULTS then
+-- Function to print attributes from an instance
+local function printAttributes(instance, label)
+	if not instance then
+		print("❌ " .. label .. ": NOT FOUND")
 		return
 	end
+	
+	print("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
+	print("📍 " .. label)
+	print("   Instance: " .. instance.Name .. " (" .. instance.ClassName .. ")")
 	
 	local attributes = instance:GetAttributes()
 	local hasAttributes = next(attributes) ~= nil
 	
-	if hasAttributes or CONFIG.SHOW_EMPTY then
-		local path = getFullPath(instance)
-		
-		if not trackedInstances[instance] then
-			trackedInstances[instance] = true
-			resultCount += 1
-			
-			print("━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
-			print("📍 Instance:", instance.Name)
-			print("📂 Path:", path)
-			print("🏷️  Class:", instance.ClassName)
-			
-			if hasAttributes then
-				print("✨ Attributes:")
-				for name, value in pairs(attributes) do
-					local valueType = typeof(value)
-					print(string.format("   • %s = %s (%s)", name, tostring(value), valueType))
-				end
-			else
-				print("✨ Attributes: None")
+	if hasAttributes then
+		print("   ✨ Attributes:")
+		for name, value in pairs(attributes) do
+			print(string.format("      • %s = %s (%s)", name, tostring(value), typeof(value)))
+			totalFound = totalFound + 1
+		end
+	else
+		print("   ⚠️  No attributes found")
+	end
+end
+
+-- Function to print values from a folder (like leaderstats/Data)
+local function printFolderValues(folder, label)
+	if not folder then
+		print("❌ " .. label .. ": NOT FOUND")
+		return
+	end
+	
+	print("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
+	print("📍 " .. label)
+	print("   Instance: " .. folder.Name .. " (" .. folder.ClassName .. ")")
+	
+	local children = folder:GetChildren()
+	if #children > 0 then
+		print("   📊 Values:")
+		for _, child in ipairs(children) do
+			if child:IsA("ValueBase") then
+				print(string.format("      • %s = %s (%s)", child.Name, tostring(child.Value), child.ClassName))
+				totalFound = totalFound + 1
 			end
 		end
-	end
-end
-
--- Recursive function to scan descendants
-local function scanDescendants(container, label)
-	print("\n🔍 Scanning:", label)
-	print("━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
-	
-	scanInstance(container)
-	
-	for _, descendant in ipairs(container:GetDescendants()) do
-		if resultCount >= CONFIG.MAX_RESULTS then
-			print("⚠️  Result limit reached!")
-			break
-		end
-		scanInstance(descendant)
-	end
-end
-
--- Function to watch for attribute changes
-local function watchAttributes(instance)
-	instance.AttributeChanged:Connect(function(attributeName)
-		local value = instance:GetAttribute(attributeName)
-		local path = getFullPath(instance)
 		
-		print("\n🔔 ATTRIBUTE CHANGED!")
-		print("━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
-		print("📍 Instance:", instance.Name)
-		print("📂 Path:", path)
-		print("🏷️  Attribute:", attributeName)
-		print("💾 New Value:", tostring(value), "(" .. typeof(value) .. ")")
-	end)
-end
-
--- Main scanning function
-local function performScan()
-	print("\n\n")
-	print("╔════════════════════════════════════╗")
-	print("║   ROBLOX ATTRIBUTE SCANNER v1.0    ║")
-	print("╚════════════════════════════════════╝")
-	print("⏰ Scan Time:", os.date("%X"))
-	
-	-- Reset tracking
-	trackedInstances = {}
-	resultCount = 0
-	
-	-- Scan different containers
-	if CONFIG.SCAN_WORKSPACE then
-		scanDescendants(workspace, "Workspace")
+		-- Also check for attributes on the folder itself
+		local attributes = folder:GetAttributes()
+		if next(attributes) then
+			print("   ✨ Attributes on folder:")
+			for name, value in pairs(attributes) do
+				print(string.format("      • %s = %s (%s)", name, tostring(value), typeof(value)))
+				totalFound = totalFound + 1
+			end
+		end
+	else
+		print("   ⚠️  No values found")
 	end
-	
-	if CONFIG.SCAN_REPLICATED_STORAGE then
-		local ReplicatedStorage = game:GetService("ReplicatedStorage")
-		scanDescendants(ReplicatedStorage, "ReplicatedStorage")
+end
+
+-- Wait for character if it doesn't exist yet
+if not player.Character then
+	print("⏳ Waiting for character to load...")
+	player.CharacterAdded:Wait()
+end
+
+local character = player.Character
+
+-- 1. Scan Character Attributes (getCharAttr)
+print("\n🔍 METHOD 1: Character Attributes (getCharAttr)")
+printAttributes(character, "Character")
+
+-- 2. Scan Player Attributes (getPlayerAttr)
+print("\n🔍 METHOD 2: Player Attributes (getPlayerAttr)")
+printAttributes(player, "LocalPlayer")
+
+-- 3. Scan Data Folder (getDataValue)
+print("\n🔍 METHOD 3: Data Folder (getDataValue)")
+local dataFolder = player:FindFirstChild("Data")
+printFolderValues(dataFolder, "Data Folder")
+
+-- 4. Scan Leaderstats (getLeaderstats)
+print("\n🔍 METHOD 4: Leaderstats (getLeaderstats)")
+local leaderstats = player:FindFirstChild("leaderstats")
+printFolderValues(leaderstats, "Leaderstats Folder")
+
+-- Additional common locations
+print("\n🔍 BONUS: Other Common Locations")
+
+-- Check PlayerGui for attributes
+local playerGui = player:FindFirstChild("PlayerGui")
+printAttributes(playerGui, "PlayerGui")
+
+-- Check Backpack
+local backpack = player:FindFirstChild("Backpack")
+printAttributes(backpack, "Backpack")
+
+-- Check for common value containers
+local stats = player:FindFirstChild("Stats")
+if stats then
+	printFolderValues(stats, "Stats Folder")
+end
+
+local status = character:FindFirstChild("Status")
+if status then
+	printFolderValues(status, "Character Status Folder")
+end
+
+-- Specific search for "Exposure" everywhere
+print("\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
+print("🎯 SPECIFIC SEARCH: 'Exposure' Values")
+print("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
+
+local exposureFound = false
+
+-- Check all possible locations
+local searchLocations = {
+	{instance = character, label = "Character Attribute"},
+	{instance = player, label = "Player Attribute"},
+	{instance = dataFolder, label = "Data Folder"},
+	{instance = leaderstats, label = "Leaderstats"},
+	{instance = stats, label = "Stats Folder"},
+	{instance = status, label = "Status Folder"}
+}
+
+for _, location in ipairs(searchLocations) do
+	if location.instance then
+		-- Check as attribute
+		local attrValue = location.instance:GetAttribute("Exposure")
+		if attrValue ~= nil then
+			print(string.format("✅ Found in %s: Exposure = %s (%s)", location.label, tostring(attrValue), typeof(attrValue)))
+			exposureFound = true
+		end
+		
+		-- Check as child value object
+		local valueObj = location.instance:FindFirstChild("Exposure")
+		if valueObj and valueObj:IsA("ValueBase") then
+			print(string.format("✅ Found in %s: Exposure = %s (%s)", location.label, tostring(valueObj.Value), valueObj.ClassName))
+			exposureFound = true
+		end
 	end
-	
-	if CONFIG.SCAN_PLAYER and player.Character then
-		scanDescendants(player.Character, "Player Character")
-	end
-	
-	print("\n")
-	print("╔════════════════════════════════════╗")
-	print("║         SCAN COMPLETE              ║")
-	print("╚════════════════════════════════════╝")
-	print("📊 Total instances with attributes:", resultCount)
-	print("⏰ Next scan in", CONFIG.UPDATE_INTERVAL, "seconds")
 end
 
--- Watch for new instances being added
-local function setupWatchers(container)
-	container.DescendantAdded:Connect(function(descendant)
-		watchAttributes(descendant)
-	end)
-	
-	-- Watch existing descendants
-	for _, descendant in ipairs(container:GetDescendants()) do
-		watchAttributes(descendant)
-	end
-	
-	-- Watch the container itself
-	watchAttributes(container)
+if not exposureFound then
+	print("❌ 'Exposure' not found in any common location")
 end
 
--- Initialize
-print("🚀 Attribute Scanner Initialized!")
-print("⚙️  Configuration:")
-print("   • Update Interval:", CONFIG.UPDATE_INTERVAL, "seconds")
-print("   • Scan Workspace:", CONFIG.SCAN_WORKSPACE)
-print("   • Scan ReplicatedStorage:", CONFIG.SCAN_REPLICATED_STORAGE)
-print("   • Scan Player:", CONFIG.SCAN_PLAYER)
-print("   • Show Empty:", CONFIG.SHOW_EMPTY)
-
--- Setup attribute change watchers
-if CONFIG.SCAN_WORKSPACE then
-	setupWatchers(workspace)
-end
-
-if CONFIG.SCAN_REPLICATED_STORAGE then
-	setupWatchers(game:GetService("ReplicatedStorage"))
-end
-
--- Watch player character
-player.CharacterAdded:Connect(function(character)
-	if CONFIG.SCAN_PLAYER then
-		setupWatchers(character)
-	end
-end)
-
-if player.Character and CONFIG.SCAN_PLAYER then
-	setupWatchers(player.Character)
-end
-
--- Perform initial scan
-performScan()
-
--- Setup periodic scanning
-while true do
-	task.wait(CONFIG.UPDATE_INTERVAL)
-	performScan()
-end
+print("\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
+print("✅ SCAN COMPLETE")
+print("📊 Total Values/Attributes Found:", totalFound)
+print("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n")
