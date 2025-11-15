@@ -1,237 +1,169 @@
--- Sleek Exposure Checker UI
--- Place this in a LocalScript in StarterPlayer > StarterPlayerScripts
+-- LocalScript (e.g. StarterPlayer > StarterPlayerScripts)
 
 local Players = game:GetService("Players")
-local player = Players.LocalPlayer
+local LocalPlayer = Players.LocalPlayer
 
--- Wait for character
-local character = player.Character or player.CharacterAdded:Wait()
+----------------------------------------------------------------
+-- Helpers
+----------------------------------------------------------------
 
--- Helper functions to get exposure from different locations
-local function getCharAttr(char, attrName)
-	return char and char:GetAttribute(attrName)
-end
-
-local function getPlayerAttr(plr, attrName)
-	return plr and plr:GetAttribute(attrName)
-end
-
-local function getDataValue(plr, valueName)
-	local data = plr:FindFirstChild("Data")
-	if data then
-		local valueObj = data:FindFirstChild(valueName)
-		if valueObj and valueObj:IsA("ValueBase") then
-			return valueObj.Value
-		end
-	end
-	return nil
-end
-
-local function getLeaderstats(plr, valueName)
-	local leaderstats = plr:FindFirstChild("leaderstats")
-	if leaderstats then
-		local valueObj = leaderstats:FindFirstChild(valueName)
-		if valueObj and valueObj:IsA("ValueBase") then
-			return valueObj.Value
-		end
-	end
-	return nil
-end
-
--- Main function to get exposure
-local function getExposure()
-	local char = player.Character
-	return getCharAttr(char, "Exposure") or 
-	       getPlayerAttr(player, "Exposure") or 
-	       getDataValue(player, "Exposure") or
-	       getLeaderstats(player, "Exposure") or 0
-end
-
--- Create ScreenGui
-local screenGui = Instance.new("ScreenGui")
-screenGui.Name = "ExposureUI"
-screenGui.ResetOnSpawn = false
-screenGui.ZIndexBehavior = Enum.ZIndexBehavior.Sibling
-screenGui.Parent = player:WaitForChild("PlayerGui")
-
--- Create main frame
-local mainFrame = Instance.new("Frame")
-mainFrame.Name = "MainFrame"
-mainFrame.Size = UDim2.new(0, 280, 0, 120)
-mainFrame.Position = UDim2.new(0.5, -140, 0.05, 0)
-mainFrame.BackgroundColor3 = Color3.fromRGB(25, 25, 35)
-mainFrame.BorderSizePixel = 0
-mainFrame.Parent = screenGui
-
--- Add rounded corners
-local corner = Instance.new("UICorner")
-corner.CornerRadius = UDim.new(0, 16)
-corner.Parent = mainFrame
-
--- Add subtle shadow/glow effect
-local stroke = Instance.new("UIStroke")
-stroke.Color = Color3.fromRGB(100, 100, 255)
-stroke.Thickness = 2
-stroke.Transparency = 0.7
-stroke.Parent = mainFrame
-
--- Create gradient background
-local gradient = Instance.new("UIGradient")
-gradient.Color = ColorSequence.new{
-	ColorSequenceKeypoint.new(0, Color3.fromRGB(35, 35, 50)),
-	ColorSequenceKeypoint.new(1, Color3.fromRGB(20, 20, 30))
-}
-gradient.Rotation = 45
-gradient.Parent = mainFrame
-
--- Title label
-local titleLabel = Instance.new("TextLabel")
-titleLabel.Name = "TitleLabel"
-titleLabel.Size = UDim2.new(1, -20, 0, 30)
-titleLabel.Position = UDim2.new(0, 10, 0, 10)
-titleLabel.BackgroundTransparency = 1
-titleLabel.Text = "EXPOSURE"
-titleLabel.TextColor3 = Color3.fromRGB(150, 150, 200)
-titleLabel.TextSize = 16
-titleLabel.Font = Enum.Font.GothamBold
-titleLabel.TextXAlignment = Enum.TextXAlignment.Left
-titleLabel.Parent = mainFrame
-
--- Icon/emoji for visual appeal
-local icon = Instance.new("TextLabel")
-icon.Size = UDim2.new(0, 24, 0, 24)
-icon.Position = UDim2.new(1, -34, 0, 10)
-icon.BackgroundTransparency = 1
-icon.Text = "👁️"
-icon.TextSize = 20
-icon.Parent = mainFrame
-
--- Exposure value display
-local exposureLabel = Instance.new("TextLabel")
-exposureLabel.Name = "ExposureLabel"
-exposureLabel.Size = UDim2.new(1, -20, 0, 50)
-exposureLabel.Position = UDim2.new(0, 10, 0, 45)
-exposureLabel.BackgroundTransparency = 1
-exposureLabel.Text = "0"
-exposureLabel.TextColor3 = Color3.fromRGB(255, 255, 255)
-exposureLabel.TextSize = 42
-exposureLabel.Font = Enum.Font.GothamBold
-exposureLabel.TextXAlignment = Enum.TextXAlignment.Center
-exposureLabel.Parent = mainFrame
-
--- Add glow to number
-local exposureStroke = Instance.new("UIStroke")
-exposureStroke.Color = Color3.fromRGB(100, 150, 255)
-exposureStroke.Thickness = 1
-exposureStroke.Transparency = 0.5
-exposureStroke.Parent = exposureLabel
-
--- Status label (shows where the value is from)
-local statusLabel = Instance.new("TextLabel")
-statusLabel.Name = "StatusLabel"
-statusLabel.Size = UDim2.new(1, -20, 0, 15)
-statusLabel.Position = UDim2.new(0, 10, 1, -25)
-statusLabel.BackgroundTransparency = 1
-statusLabel.Text = "Searching..."
-statusLabel.TextColor3 = Color3.fromRGB(120, 120, 150)
-statusLabel.TextSize = 11
-statusLabel.Font = Enum.Font.Gotham
-statusLabel.TextXAlignment = Enum.TextXAlignment.Center
-statusLabel.Parent = mainFrame
-
--- Function to determine source and update status
-local function getExposureWithSource()
-	local char = player.Character
-	local value, source
-	
-	value = getCharAttr(char, "Exposure")
-	if value then return value, "Character Attribute" end
-	
-	value = getPlayerAttr(player, "Exposure")
-	if value then return value, "Player Attribute" end
-	
-	value = getDataValue(player, "Exposure")
-	if value then return value, "Data Folder" end
-	
-	value = getLeaderstats(player, "Exposure")
-	if value then return value, "Leaderstats" end
-	
-	return 0, "Not Found"
-end
-
--- Update function
-local function updateExposure()
-	local exposure, source = getExposureWithSource()
-	exposureLabel.Text = tostring(exposure)
-	statusLabel.Text = "Source: " .. source
-	
-	-- Color based on value
-	if exposure == 0 then
-		exposureLabel.TextColor3 = Color3.fromRGB(150, 150, 150)
-	elseif exposure < 50 then
-		exposureLabel.TextColor3 = Color3.fromRGB(100, 255, 100)
-	elseif exposure < 100 then
-		exposureLabel.TextColor3 = Color3.fromRGB(255, 255, 100)
+local function safeName(obj)
+	if obj and obj.GetFullName then
+		return obj:GetFullName()
+	elseif obj and obj.Name then
+		return obj.Name
 	else
-		exposureLabel.TextColor3 = Color3.fromRGB(255, 100, 100)
+		return "N/A"
 	end
 end
 
--- Initial update
-updateExposure()
+----------------------------------------------------------------
+-- getCharAttr: scan all attributes on the character & its parts
+----------------------------------------------------------------
+local function getCharAttr()
+	local char = LocalPlayer.Character or LocalPlayer.CharacterAdded:Wait()
+	print("===== getCharAttr() | Character Attributes =====")
+	print("Character:", safeName(char))
 
--- Watch for attribute changes on all possible locations
-local function setupWatchers()
-	-- Watch character attributes
-	if player.Character then
-		player.Character.AttributeChanged:Connect(function(attr)
-			if attr == "Exposure" then
-				updateExposure()
+	-- Attributes directly on Character
+	do
+		local attrs = char:GetAttributes()
+		print("  [Character Attributes]")
+		local empty = true
+		for name, value in pairs(attrs) do
+			empty = false
+			print("    ", name, "=", value)
+		end
+		if empty then
+			print("    (no attributes set on Character)")
+		end
+	end
+
+	-- Attributes on every descendant
+	for _, obj in ipairs(char:GetDescendants()) do
+		local attrs = obj:GetAttributes()
+		local hasAttr = false
+		for name, value in pairs(attrs) do
+			if not hasAttr then
+				print("  [Descendant Attributes] ->", safeName(obj))
+				hasAttr = true
 			end
-		end)
-	end
-	
-	-- Watch player attributes
-	player.AttributeChanged:Connect(function(attr)
-		if attr == "Exposure" then
-			updateExposure()
-		end
-	end)
-	
-	-- Watch Data folder
-	local data = player:FindFirstChild("Data")
-	if data then
-		local exposure = data:FindFirstChild("Exposure")
-		if exposure and exposure:IsA("ValueBase") then
-			exposure.Changed:Connect(updateExposure)
-		end
-	end
-	
-	-- Watch leaderstats
-	local leaderstats = player:FindFirstChild("leaderstats")
-	if leaderstats then
-		local exposure = leaderstats:FindFirstChild("Exposure")
-		if exposure and exposure:IsA("ValueBase") then
-			exposure.Changed:Connect(updateExposure)
+			print("    ", name, "=", value)
 		end
 	end
 end
 
-setupWatchers()
+----------------------------------------------------------------
+-- getPlayerAttr: scan all attributes on the Player object
+----------------------------------------------------------------
+local function getPlayerAttr()
+	print("===== getPlayerAttr() | Player Attributes =====")
+	print("Player:", safeName(LocalPlayer))
 
--- Re-setup watchers on character respawn
-player.CharacterAdded:Connect(function(char)
-	character = char
-	task.wait(0.5) -- Wait for character to fully load
-	setupWatchers()
-	updateExposure()
-end)
-
--- Update every second as backup
-task.spawn(function()
-	while task.wait(1) do
-		updateExposure()
+	local attrs = LocalPlayer:GetAttributes()
+	local empty = true
+	for name, value in pairs(attrs) do
+		empty = false
+		print("  ", name, "=", value)
 	end
-end)
 
-print("✅ Exposure UI loaded successfully!")
+	if empty then
+		print("  (no attributes set on Player)")
+	end
+end
+
+----------------------------------------------------------------
+-- getDataValue: scan all ValueBase instances under the player
+-- (NumberValue, IntValue, StringValue, BoolValue, etc.)
+----------------------------------------------------------------
+local function getDataValue()
+	print("===== getDataValue() | ValueBase Scan =====")
+
+	local root = LocalPlayer
+	if not root then
+		print("  LocalPlayer N/A")
+		return
+	end
+
+	local foundAny = false
+
+	for _, obj in ipairs(root:GetDescendants()) do
+		if obj:IsA("ValueBase") then
+			foundAny = true
+			local valueStr
+
+			-- Safely access Value (just in case)
+			pcall(function()
+				valueStr = tostring(obj.Value)
+			end)
+
+			if valueStr == nil then
+				valueStr = "N/A"
+			end
+
+			print("  ", safeName(obj), "(" .. obj.ClassName .. ")", "=", valueStr)
+		end
+	end
+
+	if not foundAny then
+		print("  (no ValueBase objects found under LocalPlayer)")
+	end
+end
+
+----------------------------------------------------------------
+-- getLeaderstats: dump all leaderstats values for the player
+----------------------------------------------------------------
+local function getLeaderstats()
+	print("===== getLeaderstats() | Leaderstats =====")
+
+	local leaderstats = LocalPlayer:FindFirstChild("leaderstats")
+	if not leaderstats then
+		print("  leaderstats folder not found (N/A)")
+		return
+	end
+
+	local children = leaderstats:GetChildren()
+	if #children == 0 then
+		print("  leaderstats found but empty")
+		return
+	end
+
+	for _, stat in ipairs(children) do
+		if stat:IsA("ValueBase") then
+			local valueStr
+			pcall(function()
+				valueStr = tostring(stat.Value)
+			end)
+			if valueStr == nil then
+				valueStr = "N/A"
+			end
+
+			print("  ", stat.Name, "(", stat.ClassName, ") =", valueStr)
+		else
+			print("  ", stat.Name, "(non-ValueBase, type:", stat.ClassName .. ")")
+		end
+	end
+end
+
+----------------------------------------------------------------
+-- Main loop: periodically scan everything
+----------------------------------------------------------------
+
+-- Wait for character to spawn once before starting loop
+if not LocalPlayer.Character or not LocalPlayer.Character.Parent then
+	LocalPlayer.CharacterAdded:Wait()
+end
+
+print(">>> LocalPlayer attribute scanner started (client-side)")
+
+-- Run every 5 seconds; adjust delay if you want it faster/slower
+while true do
+	task.wait(5)
+
+	print("\n\n================== SCAN TICK ==================")
+	getPlayerAttr()
+	getCharAttr()
+	getDataValue()
+	getLeaderstats()
+	print("================ END SCAN TICK ================\n")
+end
