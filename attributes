@@ -1,169 +1,183 @@
--- LocalScript (e.g. StarterPlayer > StarterPlayerScripts)
+-- LocalScript in StarterPlayer > StarterPlayerScripts
+-- Scans the entire game for anything related to "Exposure"
 
 local Players = game:GetService("Players")
+local UserInputService = game:GetService("UserInputService")
+
 local LocalPlayer = Players.LocalPlayer
 
-----------------------------------------------------------------
--- Helpers
-----------------------------------------------------------------
+--------------------------------------------------
+-- Helper functions (matching your original style)
+--------------------------------------------------
 
-local function safeName(obj)
-	if obj and obj.GetFullName then
-		return obj:GetFullName()
-	elseif obj and obj.Name then
-		return obj.Name
-	else
-		return "N/A"
+local function getPlayerAttr(targetPlayer, attrName)
+	if not targetPlayer then return nil end
+	local success, result = pcall(function()
+		return targetPlayer:GetAttribute(attrName)
+	end)
+	if success and result ~= nil then
+		return result
 	end
+	return nil
 end
 
-----------------------------------------------------------------
--- getCharAttr: scan all attributes on the character & its parts
-----------------------------------------------------------------
-local function getCharAttr()
-	local char = LocalPlayer.Character or LocalPlayer.CharacterAdded:Wait()
-	print("===== getCharAttr() | Character Attributes =====")
-	print("Character:", safeName(char))
-
-	-- Attributes directly on Character
-	do
-		local attrs = char:GetAttributes()
-		print("  [Character Attributes]")
-		local empty = true
-		for name, value in pairs(attrs) do
-			empty = false
-			print("    ", name, "=", value)
-		end
-		if empty then
-			print("    (no attributes set on Character)")
-		end
+local function getCharAttr(char, attrName)
+	if not char then return nil end
+	local success, result = pcall(function()
+		return char:GetAttribute(attrName)
+	end)
+	if success and result ~= nil then
+		return result
 	end
-
-	-- Attributes on every descendant
-	for _, obj in ipairs(char:GetDescendants()) do
-		local attrs = obj:GetAttributes()
-		local hasAttr = false
-		for name, value in pairs(attrs) do
-			if not hasAttr then
-				print("  [Descendant Attributes] ->", safeName(obj))
-				hasAttr = true
-			end
-			print("    ", name, "=", value)
-		end
-	end
+	return nil
 end
 
-----------------------------------------------------------------
--- getPlayerAttr: scan all attributes on the Player object
-----------------------------------------------------------------
-local function getPlayerAttr()
-	print("===== getPlayerAttr() | Player Attributes =====")
-	print("Player:", safeName(LocalPlayer))
-
-	local attrs = LocalPlayer:GetAttributes()
-	local empty = true
-	for name, value in pairs(attrs) do
-		empty = false
-		print("  ", name, "=", value)
+local function getDataValue(targetPlayer, valueName)
+	if not targetPlayer then return nil end
+	local success, result = pcall(function()
+		local data = targetPlayer:FindFirstChild("Data")
+		if not data then return nil end
+		local valueObj = data:FindFirstChild(valueName)
+		if not valueObj then return nil end
+		return valueObj.Value
+	end)
+	if success and result ~= nil then
+		return result
 	end
-
-	if empty then
-		print("  (no attributes set on Player)")
-	end
+	return nil
 end
 
-----------------------------------------------------------------
--- getDataValue: scan all ValueBase instances under the player
--- (NumberValue, IntValue, StringValue, BoolValue, etc.)
-----------------------------------------------------------------
-local function getDataValue()
-	print("===== getDataValue() | ValueBase Scan =====")
+local function getLeaderstats(targetPlayer, statName)
+	if not targetPlayer then return nil end
+	local success, result = pcall(function()
+		local stats = targetPlayer:FindFirstChild("leaderstats")
+		if not stats then return nil end
+		local statObj = stats:FindFirstChild(statName)
+		if not statObj then return nil end
+		return statObj.Value
+	end)
+	if success and result ~= nil then
+		return result
+	end
+	return nil
+end
 
-	local root = LocalPlayer
-	if not root then
-		print("  LocalPlayer N/A")
-		return
+--------------------------------------------------
+-- Core scan logic
+--------------------------------------------------
+
+local function scanAttributesEverywhere()
+	print("\n\n================== EXPOSURE GLOBAL SCAN START ==================")
+
+	--------------------------
+	-- 1) Attributes: any instance with Attribute "Exposure"
+	--------------------------
+
+	local function checkAttributesOn(inst)
+		local attrs
+		local ok = pcall(function()
+			attrs = inst:GetAttributes()
+		end)
+		if ok and attrs and attrs["Exposure"] ~= nil then
+			warn(("[ATTR] %s  ->  Attribute 'Exposure' = %s")
+				:format(inst:GetFullName(), tostring(attrs["Exposure"])))
+		end
 	end
 
-	local foundAny = false
+	print(">> Scanning all Attributes for 'Exposure'...")
+	checkAttributesOn(game)
+	for _, inst in ipairs(game:GetDescendants()) do
+		checkAttributesOn(inst)
+	end
 
-	for _, obj in ipairs(root:GetDescendants()) do
-		if obj:IsA("ValueBase") then
-			foundAny = true
-			local valueStr
+	--------------------------
+	-- 2) Any ValueBase named "Exposure" anywhere in game
+	--------------------------
 
-			-- Safely access Value (just in case)
-			pcall(function()
-				valueStr = tostring(obj.Value)
+	print(">> Scanning all ValueBase objects named 'Exposure'...")
+	for _, inst in ipairs(game:GetDescendants()) do
+		if inst.Name == "Exposure" and inst:IsA("ValueBase") then
+			local val
+			local ok = pcall(function()
+				val = inst.Value
 			end)
-
-			if valueStr == nil then
-				valueStr = "N/A"
-			end
-
-			print("  ", safeName(obj), "(" .. obj.ClassName .. ")", "=", valueStr)
+			warn(("[VALUE] %s  ->  %s (%s) = %s")
+				:format(inst:GetFullName(), inst.Name, inst.ClassName, tostring(ok and val or "<?>")))
 		end
 	end
 
-	if not foundAny then
-		print("  (no ValueBase objects found under LocalPlayer)")
-	end
-end
+	--------------------------
+	-- 3) Per-player: use your helper patterns
+	--------------------------
 
-----------------------------------------------------------------
--- getLeaderstats: dump all leaderstats values for the player
-----------------------------------------------------------------
-local function getLeaderstats()
-	print("===== getLeaderstats() | Leaderstats =====")
+	print(">> Checking all players using getCharAttr / getPlayerAttr / getDataValue / getLeaderstats...")
 
-	local leaderstats = LocalPlayer:FindFirstChild("leaderstats")
-	if not leaderstats then
-		print("  leaderstats folder not found (N/A)")
-		return
-	end
+	for _, plr in ipairs(Players:GetPlayers()) do
+		local char = plr.Character
+		print(("--- Player: %s ---"):format(plr.Name))
 
-	local children = leaderstats:GetChildren()
-	if #children == 0 then
-		print("  leaderstats found but empty")
-		return
-	end
+		local fromCharAttr = getCharAttr(char, "Exposure")
+		if fromCharAttr ~= nil and char then
+			warn(("[PLAYER CHAR ATTR] %s  ->  Character attribute 'Exposure' = %s")
+				:format(char:GetFullName(), tostring(fromCharAttr)))
+		end
 
-	for _, stat in ipairs(children) do
-		if stat:IsA("ValueBase") then
-			local valueStr
-			pcall(function()
-				valueStr = tostring(stat.Value)
-			end)
-			if valueStr == nil then
-				valueStr = "N/A"
+		local fromPlayerAttr = getPlayerAttr(plr, "Exposure")
+		if fromPlayerAttr ~= nil then
+			warn(("[PLAYER ATTR] %s  ->  Player attribute 'Exposure' = %s")
+				:format(plr:GetFullName(), tostring(fromPlayerAttr)))
+		end
+
+		local fromData = getDataValue(plr, "Exposure")
+		if fromData ~= nil then
+			-- We don't know exact child path from helper, so search it:
+			local dataFolder = plr:FindFirstChild("Data")
+			if dataFolder then
+				for _, obj in ipairs(dataFolder:GetDescendants()) do
+					if obj.Name == "Exposure" and obj:IsA("ValueBase") then
+						warn(("[PLAYER DATA] %s  ->  Value 'Exposure' = %s")
+							:format(obj:GetFullName(), tostring(fromData)))
+					end
+				end
+			else
+				warn(("[PLAYER DATA] %s  ->  Exposure found via getDataValue, but Data folder path unknown")
+					:format(plr.Name))
 			end
+		end
 
-			print("  ", stat.Name, "(", stat.ClassName, ") =", valueStr)
-		else
-			print("  ", stat.Name, "(non-ValueBase, type:", stat.ClassName .. ")")
+		local fromLeader = getLeaderstats(plr, "Exposure")
+		if fromLeader ~= nil then
+			local ls = plr:FindFirstChild("leaderstats")
+			if ls then
+				for _, obj in ipairs(ls:GetDescendants()) do
+					if obj.Name == "Exposure" and obj:IsA("ValueBase") then
+						warn(("[PLAYER LEADERSTATS] %s  ->  Value 'Exposure' = %s")
+							:format(obj:GetFullName(), tostring(fromLeader)))
+					end
+				end
+			else
+				warn(("[PLAYER LEADERSTATS] %s  ->  Exposure found via getLeaderstats, but leaderstats path unknown")
+					:format(plr.Name))
+			end
 		end
 	end
+
+	print("=================== EXPOSURE GLOBAL SCAN END ===================\n")
 end
 
-----------------------------------------------------------------
--- Main loop: periodically scan everything
-----------------------------------------------------------------
+--------------------------------------------------
+-- Run scan automatically + keybind
+--------------------------------------------------
 
--- Wait for character to spawn once before starting loop
-if not LocalPlayer.Character or not LocalPlayer.Character.Parent then
-	LocalPlayer.CharacterAdded:Wait()
-end
+-- Initial scan after a short delay so the world can load a bit
+task.delay(1, function()
+	scanAttributesEverywhere()
+end)
 
-print(">>> LocalPlayer attribute scanner started (client-side)")
-
--- Run every 5 seconds; adjust delay if you want it faster/slower
-while true do
-	task.wait(5)
-
-	print("\n\n================== SCAN TICK ==================")
-	getPlayerAttr()
-	getCharAttr()
-	getDataValue()
-	getLeaderstats()
-	print("================ END SCAN TICK ================\n")
-end
+-- Rescan on key press (L)
+UserInputService.InputBegan:Connect(function(input, gpe)
+	if gpe then return end
+	if input.KeyCode == Enum.KeyCode.L then
+		scanAttributesEverywhere()
+	end
+end)
