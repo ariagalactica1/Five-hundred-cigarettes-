@@ -1,5 +1,5 @@
--- LocalScript in StarterPlayer > StarterPlayerScripts
--- Scans the entire game for anything related to "Exposure"
+-- Exposure Path Finder
+-- Place this as a LocalScript in: StarterPlayer > StarterPlayerScripts
 
 local Players = game:GetService("Players")
 local UserInputService = game:GetService("UserInputService")
@@ -7,8 +7,12 @@ local UserInputService = game:GetService("UserInputService")
 local LocalPlayer = Players.LocalPlayer
 
 --------------------------------------------------
--- Helper functions (matching your original style)
+-- Helper functions (same as in your Bio-Scanner)
 --------------------------------------------------
+
+local function getCharacter(p)
+	return p and p.Character or nil
+end
 
 local function getPlayerAttr(targetPlayer, attrName)
 	if not targetPlayer then return nil end
@@ -63,121 +67,96 @@ local function getLeaderstats(targetPlayer, statName)
 end
 
 --------------------------------------------------
--- Core scan logic
+-- Debug: find exactly WHERE Exposure is stored
 --------------------------------------------------
 
-local function scanAttributesEverywhere()
-	print("\n\n================== EXPOSURE GLOBAL SCAN START ==================")
-
-	--------------------------
-	-- 1) Attributes: any instance with Attribute "Exposure"
-	--------------------------
-
-	local function checkAttributesOn(inst)
-		local attrs
-		local ok = pcall(function()
-			attrs = inst:GetAttributes()
-		end)
-		if ok and attrs and attrs["Exposure"] ~= nil then
-			warn(("[ATTR] %s  ->  Attribute 'Exposure' = %s")
-				:format(inst:GetFullName(), tostring(attrs["Exposure"])))
-		end
+local function debugExposureSource(targetPlayer)
+	if not targetPlayer then
+		warn("[Exposure] No targetPlayer given")
+		return nil
 	end
 
-	print(">> Scanning all Attributes for 'Exposure'...")
-	checkAttributesOn(game)
-	for _, inst in ipairs(game:GetDescendants()) do
-		checkAttributesOn(inst)
+	print("\n================ EXPOSURE DEBUG FOR:", targetPlayer.Name, "================")
+
+	local char = getCharacter(targetPlayer)
+	local v
+
+	-- 1) Character attribute
+	v = getCharAttr(char, "Exposure")
+	if v ~= nil and char then
+		warn(("[Exposure] Character attribute -> %s  |  Value = %s")
+			:format(char:GetFullName(), tostring(v)))
+		return v
 	end
 
-	--------------------------
-	-- 2) Any ValueBase named "Exposure" anywhere in game
-	--------------------------
-
-	print(">> Scanning all ValueBase objects named 'Exposure'...")
-	for _, inst in ipairs(game:GetDescendants()) do
-		if inst.Name == "Exposure" and inst:IsA("ValueBase") then
-			local val
-			local ok = pcall(function()
-				val = inst.Value
-			end)
-			warn(("[VALUE] %s  ->  %s (%s) = %s")
-				:format(inst:GetFullName(), inst.Name, inst.ClassName, tostring(ok and val or "<?>")))
-		end
+	-- 2) Player attribute
+	v = getPlayerAttr(targetPlayer, "Exposure")
+	if v ~= nil then
+		warn(("[Exposure] Player attribute    -> %s  |  Value = %s")
+			:format(targetPlayer:GetFullName(), tostring(v)))
+		return v
 	end
 
-	--------------------------
-	-- 3) Per-player: use your helper patterns
-	--------------------------
-
-	print(">> Checking all players using getCharAttr / getPlayerAttr / getDataValue / getLeaderstats...")
-
-	for _, plr in ipairs(Players:GetPlayers()) do
-		local char = plr.Character
-		print(("--- Player: %s ---"):format(plr.Name))
-
-		local fromCharAttr = getCharAttr(char, "Exposure")
-		if fromCharAttr ~= nil and char then
-			warn(("[PLAYER CHAR ATTR] %s  ->  Character attribute 'Exposure' = %s")
-				:format(char:GetFullName(), tostring(fromCharAttr)))
+	-- 3) Data folder value
+	v = getDataValue(targetPlayer, "Exposure")
+	if v ~= nil then
+		local dataFolder = targetPlayer:FindFirstChild("Data")
+		if dataFolder and dataFolder:FindFirstChild("Exposure") then
+			warn(("[Exposure] Data value        -> %s  |  Value = %s")
+				:format(dataFolder.Exposure:GetFullName(), tostring(v)))
+		else
+			warn(("[Exposure] Data value via getDataValue (instance not found) | Value = %s")
+				:format(tostring(v)))
 		end
-
-		local fromPlayerAttr = getPlayerAttr(plr, "Exposure")
-		if fromPlayerAttr ~= nil then
-			warn(("[PLAYER ATTR] %s  ->  Player attribute 'Exposure' = %s")
-				:format(plr:GetFullName(), tostring(fromPlayerAttr)))
-		end
-
-		local fromData = getDataValue(plr, "Exposure")
-		if fromData ~= nil then
-			-- We don't know exact child path from helper, so search it:
-			local dataFolder = plr:FindFirstChild("Data")
-			if dataFolder then
-				for _, obj in ipairs(dataFolder:GetDescendants()) do
-					if obj.Name == "Exposure" and obj:IsA("ValueBase") then
-						warn(("[PLAYER DATA] %s  ->  Value 'Exposure' = %s")
-							:format(obj:GetFullName(), tostring(fromData)))
-					end
-				end
-			else
-				warn(("[PLAYER DATA] %s  ->  Exposure found via getDataValue, but Data folder path unknown")
-					:format(plr.Name))
-			end
-		end
-
-		local fromLeader = getLeaderstats(plr, "Exposure")
-		if fromLeader ~= nil then
-			local ls = plr:FindFirstChild("leaderstats")
-			if ls then
-				for _, obj in ipairs(ls:GetDescendants()) do
-					if obj.Name == "Exposure" and obj:IsA("ValueBase") then
-						warn(("[PLAYER LEADERSTATS] %s  ->  Value 'Exposure' = %s")
-							:format(obj:GetFullName(), tostring(fromLeader)))
-					end
-				end
-			else
-				warn(("[PLAYER LEADERSTATS] %s  ->  Exposure found via getLeaderstats, but leaderstats path unknown")
-					:format(plr.Name))
-			end
-		end
+		return v
 	end
 
-	print("=================== EXPOSURE GLOBAL SCAN END ===================\n")
+	-- 4) leaderstats value
+	v = getLeaderstats(targetPlayer, "Exposure")
+	if v ~= nil then
+		local ls = targetPlayer:FindFirstChild("leaderstats")
+		if ls and ls:FindFirstChild("Exposure") then
+			warn(("[Exposure] leaderstats value -> %s  |  Value = %s")
+				:format(ls.Exposure:GetFullName(), tostring(v)))
+		else
+			warn(("[Exposure] leaderstats Exposure via getLeaderstats (instance not found) | Value = %s")
+				:format(tostring(v)))
+		end
+		return v
+	end
+
+	warn("[Exposure] Could NOT find Exposure anywhere for player " .. targetPlayer.Name)
+	return nil
 end
 
 --------------------------------------------------
--- Run scan automatically + keybind
+-- Run it for LocalPlayer
 --------------------------------------------------
 
--- Initial scan after a short delay so the world can load a bit
-task.delay(1, function()
-	scanAttributesEverywhere()
+local function scanLocalPlayerExposure()
+	local char = LocalPlayer.Character or LocalPlayer.CharacterAdded:Wait()
+	-- small delay so Data/leaderstats have time to load
+	task.wait(0.5)
+	debugExposureSource(LocalPlayer)
+end
+
+-- Run once when this script starts (if already spawned)
+if LocalPlayer.Character then
+	task.spawn(scanLocalPlayerExposure)
+end
+
+-- Run again when you respawn
+LocalPlayer.CharacterAdded:Connect(function()
+	task.spawn(scanLocalPlayerExposure)
 end)
 
--- Rescan on key press (L)
+--------------------------------------------------
+-- Optional: press L to re-scan manually
+--------------------------------------------------
+
 UserInputService.InputBegan:Connect(function(input, gpe)
 	if gpe then return end
 	if input.KeyCode == Enum.KeyCode.L then
-		scanAttributesEverywhere()
+		scanLocalPlayerExposure()
 	end
 end)
