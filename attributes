@@ -1,7 +1,194 @@
-local exposure = player:GetAttribute("Exposure")
+-- LocalScript to get all attributes and properties from the local player
+local Players = game:GetService("Players")
+local player = Players.LocalPlayer
 
-if exposure ~= nil then
-    print("Exposure found:", exposure)
-else
-    print("Exposure NOT found")
+-- Function to get all attributes from an instance
+local function getAllAttributes(instance)
+    local attributes = instance:GetAttributes()
+    return attributes
 end
+
+-- Function to get the path to access an instance
+local function getAccessPath(instance, instanceName)
+    if instance == player then
+        return "Players.LocalPlayer"
+    elseif instance == player.Character then
+        return "Players.LocalPlayer.Character"
+    elseif instance:IsA("Humanoid") then
+        return "Players.LocalPlayer.Character.Humanoid"
+    else
+        return instance:GetFullName()
+    end
+end
+
+-- Function to print all attributes in a formatted way
+local function printAttributes(instance, instanceName)
+    local attributes = getAllAttributes(instance)
+    local accessPath = getAccessPath(instance, instanceName)
+    
+    print("========================================")
+    print("Attributes for: " .. instanceName)
+    print("Location: " .. accessPath)
+    print("========================================")
+    
+    local count = 0
+    for attributeName, attributeValue in pairs(attributes) do
+        count = count + 1
+        print(string.format('[%s] = %s (Type: %s)', 
+            attributeName, 
+            tostring(attributeValue), 
+            type(attributeValue)
+        ))
+        print(string.format('  → Access: %s:GetAttribute("%s")', accessPath, attributeName))
+        print("")
+    end
+    
+    if count == 0 then
+        print("No attributes found.")
+    else
+        print("Total attributes: " .. count)
+    end
+    print("========================================\n")
+end
+
+-- Function to get common Humanoid properties
+local function printHumanoidProperties(humanoid)
+    local accessPath = getAccessPath(humanoid, "Humanoid")
+    
+    print("========================================")
+    print("Humanoid Properties")
+    print("Location: " .. accessPath)
+    print("========================================")
+    
+    -- List of common humanoid properties
+    local properties = {
+        "Health", "MaxHealth", "WalkSpeed", "JumpPower", "JumpHeight",
+        "HipHeight", "DisplayName", "NameDisplayDistance", 
+        "HealthDisplayDistance", "AutoRotate", "AutoJumpEnabled",
+        "Sit", "PlatformStand", "Jump"
+    }
+    
+    for _, propName in ipairs(properties) do
+        local success, value = pcall(function()
+            return humanoid[propName]
+        end)
+        
+        if success then
+            print(string.format("[%s] = %s", propName, tostring(value)))
+            print(string.format("  → Access: %s.%s", accessPath, propName))
+            print("")
+        end
+    end
+    
+    print("========================================\n")
+end
+
+-- Function to check for custom attributes (like Exposure, Agility, etc.)
+local function checkCustomAttributes(instance, instanceName)
+    local accessPath = getAccessPath(instance, instanceName)
+    
+    print("========================================")
+    print("Checking Custom Attributes: " .. instanceName)
+    print("Location: " .. accessPath)
+    print("========================================")
+    
+    -- Common custom attribute names to check
+    local commonCustomAttrs = {
+        "Exposure", "Agility", "Strength", "Speed", "Defense",
+        "Intelligence", "Stamina", "Energy", "Mana", "Level",
+        "XP", "Coins", "Gold"
+    }
+    
+    local found = 0
+    for _, attrName in ipairs(commonCustomAttrs) do
+        local value = instance:GetAttribute(attrName)
+        if value ~= nil then
+            found = found + 1
+            print(string.format('[%s] = %s (Type: %s)', 
+                attrName, 
+                tostring(value), 
+                type(value)
+            ))
+            print(string.format('  → Access: %s:GetAttribute("%s")', accessPath, attrName))
+            print("")
+        end
+    end
+    
+    if found == 0 then
+        print("No common custom attributes found.")
+    end
+    print("========================================\n")
+end
+
+-- Wait for character to load
+if not player.Character or not player.Character.Parent then
+    player.CharacterAdded:Wait()
+end
+
+local character = player.Character
+local humanoid = character:WaitForChild("Humanoid")
+
+-- Get all data
+print("\n===== PLAYER DATA COLLECTION =====\n")
+
+-- Player attributes
+printAttributes(player, "Player")
+checkCustomAttributes(player, "Player")
+
+-- Character attributes
+printAttributes(character, "Character")
+checkCustomAttributes(character, "Character")
+
+-- Humanoid attributes and properties
+printAttributes(humanoid, "Humanoid")
+checkCustomAttributes(humanoid, "Humanoid")
+printHumanoidProperties(humanoid)
+
+-- Print example usage code
+print("========================================")
+print("EXAMPLE USAGE CODE")
+print("========================================")
+print([[
+-- Get a player attribute:
+local value = Players.LocalPlayer:GetAttribute("AttributeName")
+
+-- Get a character attribute:
+local value = Players.LocalPlayer.Character:GetAttribute("AttributeName")
+
+-- Get a humanoid attribute:
+local value = Players.LocalPlayer.Character.Humanoid:GetAttribute("AttributeName")
+
+-- Get a humanoid property:
+local value = Players.LocalPlayer.Character.Humanoid.Health
+
+-- Set an attribute:
+Players.LocalPlayer:SetAttribute("AttributeName", newValue)
+]])
+print("========================================\n")
+
+-- Optional: Listen for attribute changes on all objects
+player.AttributeChanged:Connect(function(attributeName)
+    print(string.format('[PLAYER] Attribute "%s" changed to: %s', 
+        attributeName, 
+        tostring(player:GetAttribute(attributeName))
+    ))
+    print(string.format('  → Access: Players.LocalPlayer:GetAttribute("%s")', attributeName))
+end)
+
+character.AttributeChanged:Connect(function(attributeName)
+    print(string.format('[CHARACTER] Attribute "%s" changed to: %s', 
+        attributeName, 
+        tostring(character:GetAttribute(attributeName))
+    ))
+    print(string.format('  → Access: Players.LocalPlayer.Character:GetAttribute("%s")', attributeName))
+end)
+
+humanoid.AttributeChanged:Connect(function(attributeName)
+    print(string.format('[HUMANOID] Attribute "%s" changed to: %s', 
+        attributeName, 
+        tostring(humanoid:GetAttribute(attributeName))
+    ))
+    print(string.format('  → Access: Players.LocalPlayer.Character.Humanoid:GetAttribute("%s")', attributeName))
+end)
+
+print("✓ Attribute and property monitoring active!")
